@@ -2,5 +2,6 @@
 .env
 __pycache__/
 *.pyc
-cgi-test/uv.lock
-cgi-test/cgi-error.log
+logs/
+.pytest_cache/
+.ruff_cache/

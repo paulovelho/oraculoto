@@ -1,2 +1,0 @@
-If you can read this, oraculoto.platypusweb.com.br points to cgi-test/public.
-The wizard sees all. Mostly static files, for now.

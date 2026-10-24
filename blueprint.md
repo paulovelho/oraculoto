@@ -111,7 +111,7 @@ right now, your job will be only generate a plan.md file for each of the modules
 - **Crawler source:** Caixa's JSON endpoint `https://servicebus2.caixa.gov.br/portaldeloterias/api/megasena/{contest}`, not HTML scraping. The page in the snippet above no longer contains the results.
   - It's open (no login or key) but unofficial and fragile.
   - It runs daily, fetches every missing contest and refreshes the last 3, instead of "skip if it's already in the database".
-  - The xlsx importer stays as the fallback. Details: `crawler/plan.md`.
+  - The xlsx importer stays as the fallback. Details: `docs/crawler.md`.
   - **It blocks data-center IPs** (403 from DreamHost and from a Brazilian Hostinger VPS on 2026-10-23; it works from a home connection). So a small fetcher on the home machine talks to Caixa and hands the responses to the server over SSH.
 - **Access:**
   - A Firebase ID token is required on every endpoint, with no rate limits.
@@ -127,19 +127,24 @@ right now, your job will be only generate a plan.md file for each of the modules
     - FastAPI + Pydantic
     - MySQL 8 (DreamHost's), accessed through SQLAlchemy Core (no ORM) + PyMySQL. PostgreSQL was the first pick, but DreamHost shared hosting doesn't offer it
     - Alembic for migrations, from the first deploy. MySQL DDL isn't transactional: one change per migration, and `mysqldump` before each deploy
-    - The API runs on Passenger, with FastAPI wrapped by `a2wsgi`. Python 3.13 is installed in the home directory with uv
+    - The API runs as **plain CGI** (DreamHost removed Passenger from shared hosting): `.htaccess` + a shell wrapper start Python per request, and FastAPI is wrapped by `a2wsgi` + `wsgiref`'s CGIHandler. Python 3.13 is installed in the home directory with uv, with bytecode precompiled
     - xlsx reader: stdlib `zipfile` + `xml.etree` (the file breaks openpyxl)
-    - httpx for the crawler, firebase-admin for tokens
+    - httpx for the crawler. Firebase tokens are checked with PyJWT against Google's public keys cached on disk (`firebase-admin` is too heavy to import on every request)
     - uv, pytest, ruff
     - One codebase, with the importer and the crawler as commands. Local development: Docker Compose with MySQL 8.
     - Web (later): Vue 3 + Vite + TypeScript
-- **Module plans:** `database/plan.md`, `crawler/plan.md`, `api/plan.md`, `web/plan.md` (on hold).
+- **CGI test (2026-10-24), `oraculoto.platypusweb.com.br`, measured from Brazil:**
+  - static `test.txt`: 0.58 s (network + TLS to Virginia, paid by any US server)
+  - FastAPI `/`: ~1.37 s; `/db` with a MySQL query: ~1.27 s. Imports 463 ms once bytecode is compiled (2,380 ms on the first, cold run), MySQL connect 36 ms, query 0.4 ms
+  - So CGI costs ~0.7–0.8 s per request. Accepted for a low-traffic, invite-only app. Expect an occasional slow first request after long idle periods
+  - `cgi-test/` was deleted on 2026-10-24, once its pieces moved into `public/` and `src/oraculoto/api/cgi.py`
+- **Module plans:** `docs/database.md`, `docs/crawler.md`, `docs/api.md`, `docs/web.md` (on hold).
 
 ## Roadmap (2026-10-23)
 
-0. Stack and hosting (done). Caixa smoke test (done): blocked from data centers, so the fetcher runs at home. DreamHost MySQL is 8.0.41 (checked 2026-10-23). Still to check before step 2: that Passenger for Python is still offered.
-1. `schema.sql` / first migration, `save_draw()`, xlsx importer.
-2. Read endpoints: `/health`, `/games`, draws, stats. Auth is a pluggable dependency, with a dev stub that refuses to start outside dev.
+0. Stack and hosting (done). Caixa smoke test (done): blocked from data centers, so the fetcher runs at home. DreamHost MySQL is 8.0.41 (checked 2026-10-23). No Passenger on DreamHost; the CGI test passed (below).
+1. `schema.sql` / first migration, `save_draw()`, xlsx importer. **Done 2026-10-24** (local; not yet run on DreamHost).
+2. Read endpoints: `/health`, `/games`, draws, stats. Auth is a pluggable dependency, with a dev stub that refuses to start outside dev. **Done 2026-10-24** (local; served through `public/` + CGI, tested with a simulated CGI environment; not yet run on DreamHost, and it can't be until step 5 replaces the stub). `cgi-test/` deleted; its pieces live in `public/` and `src/oraculoto/api/cgi.py`.
 3. Guess functions + backtest, with the reference strategies as tests.
 4. Live crawler (Caixa JSON endpoint) with its schedule, plus the optional backfill.
 5. Firebase auth, invite list, tickets.

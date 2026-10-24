@@ -1,0 +1,27 @@
+# Local development only. Production is DreamHost shared hosting (MySQL 8.0.41), see blueprint.md.
+services:
+  db:
+    image: mysql:8.0
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: oraculoto
+      MYSQL_USER: oraculoto
+      MYSQL_PASSWORD: oraculoto
+    ports:
+      # 3306 is often taken by other local projects
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  db-data:

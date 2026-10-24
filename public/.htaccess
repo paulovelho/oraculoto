@@ -1,0 +1,14 @@
+# The domain's web directory points here. Only this folder is public; the code and .env sit above it.
+Options +ExecCGI -Indexes
+AddHandler cgi-script .cgi
+DirectoryIndex index.cgi
+
+RewriteEngine On
+
+# Pass the Authorization header to CGI (Apache drops it by default). It arrives as
+# HTTP_AUTHORIZATION or REDIRECT_HTTP_AUTHORIZATION; oraculoto.api.cgi handles both.
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Real files are served as they are; everything else goes to the app.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.cgi [L]
