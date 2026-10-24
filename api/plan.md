@@ -1,6 +1,6 @@
 # API — plan
 
-Status (2026-10-23): design ready, no code yet. The framework and language depend on the stack decision.
+Status (2026-10-23): design ready, no code yet. Stack decided: Python + FastAPI, firebase-admin, MySQL 8, served by Passenger on DreamHost shared hosting (see `blueprint.md` and §10).
 
 ## 1. Scope
 
@@ -144,6 +144,7 @@ rng:     a seeded random generator, the only randomness allowed
   - average hits per draw, the hit distribution, and how many draws reached each prize tier
   - next to that, always the **random baseline**: expected average `k × balls_drawn / pool size` (0.6 for k = 6 on Mega-Sena), its standard error, and the expected number of prize-tier hits
 - **Cache:** results are cached by (function and version, params, k, seed, from, to, latest contest). Nothing is stored in the database.
+- **Range cap:** at most 500 target contests per request (configurable); longer ranges get 400. Shared hosting kills long-running requests, so this is a hosting limit, not a rate limit.
 
 **Reference strategies.** Ship these as built-in functions; they double as regression tests for the backtest. Measured on 2026-10-23 over target contests #1001–#3072 (2,072 draws):
 
@@ -207,9 +208,15 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 - Storing function guesses (decided; backtests replace them).
 - Notifications ("your ticket won"). Later, the crawler could send them after each draw.
 
-## 10. Depends on the stack
+## 10. Stack and deployment (decided 2026-10-23)
 
-- The framework. If it's Python, FastAPI's automatic OpenAPI docs replace Dunedin's hand-written `openapi.yaml`.
-- The Firebase token library (`firebase-admin` in Python; `kreait/firebase-php` was used in Dunedin).
-- How guess functions are packaged, e.g. one module per function plus a registry.
-- Whether the web app is served from the same domain as the API, which decides whether CORS is needed.
+- **Framework:** FastAPI. Its automatic OpenAPI docs replace Dunedin's hand-written `openapi.yaml`.
+- **Auth:** `firebase-admin` for the token checks, behind a FastAPI dependency. Until step 5 that dependency is a dev stub that refuses to start outside dev.
+- **Guess functions:** Python, one module per function, plus a registry (key, version, description, parameters).
+- **Hosting: DreamHost shared hosting.**
+  - Passenger serves Python as WSGI, so `passenger_wsgi.py` wraps the FastAPI app with `a2wsgi`. The code doesn't need async.
+  - Python 3.13 is installed in the home directory with `uv`, because the system Python is old.
+  - **Check before step 2:** that the panel still offers Passenger for Python. There are reports of DreamHost dropping it in favor of FastCGI.
+  - CPU limits: hence the backtest range cap (§5) and the cache.
+  - **Deploy:** `mysqldump` (if migrating), `git pull`, `uv sync`, `alembic upgrade head`, `touch tmp/restart.txt`.
+- **Still open:** whether the web app is served from the same domain as the API, which decides whether CORS is needed.

@@ -23,5 +23,5 @@ Status (2026-10-23): **on hold until the API is settled**, as `blueprint.md` say
 
 ## Open (decide when this module starts)
 
-- **Stack:** Dunedin used Vue 3 + Vite + TypeScript. Pick at the stack talk or when this module starts.
+- **Stack:** Vue 3 + Vite + TypeScript (decided 2026-10-23, same as Dunedin).
 - **Hosting:** serving the web app from the same domain as the API means no CORS at all (`api/plan.md` §2).

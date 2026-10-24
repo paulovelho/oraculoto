@@ -1,0 +1,14 @@
+[project]
+name = "oraculoto-cgi-test"
+version = "0.0.1"
+description = "Throwaway test: FastAPI + MySQL served through plain CGI on DreamHost shared hosting"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "a2wsgi>=1.10",
+    "sqlalchemy>=2.0",
+    "pymysql>=1.1",
+]
+
+[tool.uv]
+package = false

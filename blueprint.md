@@ -112,6 +112,7 @@ right now, your job will be only generate a plan.md file for each of the modules
   - It's open (no login or key) but unofficial and fragile.
   - It runs daily, fetches every missing contest and refreshes the last 3, instead of "skip if it's already in the database".
   - The xlsx importer stays as the fallback. Details: `crawler/plan.md`.
+  - **It blocks data-center IPs** (403 from DreamHost and from a Brazilian Hostinger VPS on 2026-10-23; it works from a home connection). So a small fetcher on the home machine talks to Caixa and hands the responses to the server over SSH.
 - **Access:**
   - A Firebase ID token is required on every endpoint, with no rate limits.
   - Access is invite-only: the `users` table is the invite list (emails added beforehand), and anyone else gets 403.
@@ -120,7 +121,26 @@ right now, your job will be only generate a plan.md file for each of the modules
   - Users' tickets are stored and checked against results automatically.
   - Function guesses are not stored. Functions are judged by backtests run on demand, always next to a random baseline.
 - **Deployment and stack:**
-  - Deployment: Docker.
-  - Stack: to be discussed (leaning towards Python). `schema.sql` and the importer wait for that decision.
+  - Deployment (decided 2026-10-23): **DreamHost shared hosting** for the API and the database. It's a low-traffic project, and nobody wants to maintain a VPS for it. The crawler's fetcher runs on the home machine (see above). Docker is for local development only.
+  - Stack (decided 2026-10-23):
+    - Python 3.13 for everything: the API, the importer, the crawler and the guess functions
+    - FastAPI + Pydantic
+    - MySQL 8 (DreamHost's), accessed through SQLAlchemy Core (no ORM) + PyMySQL. PostgreSQL was the first pick, but DreamHost shared hosting doesn't offer it
+    - Alembic for migrations, from the first deploy. MySQL DDL isn't transactional: one change per migration, and `mysqldump` before each deploy
+    - The API runs on Passenger, with FastAPI wrapped by `a2wsgi`. Python 3.13 is installed in the home directory with uv
+    - xlsx reader: stdlib `zipfile` + `xml.etree` (the file breaks openpyxl)
+    - httpx for the crawler, firebase-admin for tokens
+    - uv, pytest, ruff
+    - One codebase, with the importer and the crawler as commands. Local development: Docker Compose with MySQL 8.
+    - Web (later): Vue 3 + Vite + TypeScript
 - **Module plans:** `database/plan.md`, `crawler/plan.md`, `api/plan.md`, `web/plan.md` (on hold).
+
+## Roadmap (2026-10-23)
+
+0. Stack and hosting (done). Caixa smoke test (done): blocked from data centers, so the fetcher runs at home. DreamHost MySQL is 8.0.41 (checked 2026-10-23). Still to check before step 2: that Passenger for Python is still offered.
+1. `schema.sql` / first migration, `save_draw()`, xlsx importer.
+2. Read endpoints: `/health`, `/games`, draws, stats. Auth is a pluggable dependency, with a dev stub that refuses to start outside dev.
+3. Guess functions + backtest, with the reference strategies as tests.
+4. Live crawler (Caixa JSON endpoint) with its schedule, plus the optional backfill.
+5. Firebase auth, invite list, tickets.
 

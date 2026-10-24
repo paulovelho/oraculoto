@@ -1,6 +1,6 @@
 # Database — plan
 
-Status (2026-10-23): design ready. `schema.sql` and the xlsx importer are **not written yet**. They wait for the stack decision, because the SQL dialect and the importer's language depend on it. Everything below is engine-neutral unless marked.
+Status (2026-10-23): design ready. `schema.sql` and the xlsx importer are **not written yet**. Stack decided: **MySQL 8** on DreamHost shared hosting, SQLAlchemy Core + PyMySQL, Alembic, Python importer on stdlib zipfile + xml.etree (see `blueprint.md`). Types below are generic; §9 maps them to MySQL.
 
 ## 1. Scope
 
@@ -80,7 +80,7 @@ Not stored:
 
 ## 5. Tables
 
-Types are generic. The mapping to PostgreSQL and MariaDB is in §9.
+Types are generic. The mapping to MySQL 8 is in §9.
 
 ### `games`
 
@@ -418,7 +418,7 @@ Command (the exact name depends on the stack):
 
 ## 8. Verification (once `schema.sql` and the importer exist)
 
-1. Load `schema.sql` into an empty database, then import the xlsx. Expect exactly the row counts and NULL counts above.
+1. Run the migrations on an empty database (`alembic upgrade head`), then import the xlsx. Expect exactly the row counts and NULL counts above.
 2. Spot-check #1 and #3072 against the expected values above (and against the API).
 3. Run the import again: nothing changes (0 inserted, 0 updated).
 4. Run every query in §6. The results must match the comments.
@@ -426,20 +426,24 @@ Command (the exact name depends on the stack):
 
 ## 9. Depends on the stack
 
-- **Engine.** My starting position for the stack talk is PostgreSQL in Docker: it enforces constraints, has window functions, `ON CONFLICT` and `jsonb`, and has good Python drivers. The logical design works on MariaDB too.
+- **Engine: MySQL 8** (decided 2026-10-23), because DreamHost shared hosting offers nothing else. PostgreSQL was the first pick.
+  - **Version:** CHECK constraints are enforced only from 8.0.16, and the gaps query needs window functions (8.0). DreamHost runs **8.0.41** (checked 2026-10-23), so both work. Local development uses the `mysql:8.0` image to match.
+  - **Engine and charset:** InnoDB, `utf8mb4` (city names have accents), timestamps stored in UTC.
+  - **Driver:** PyMySQL, which is pure Python, so nothing has to compile on the shared host.
 
-  | generic | PostgreSQL | MariaDB |
-  |---|---|---|
-  | id PK | `bigint generated always as identity` | `BIGINT UNSIGNED AUTO_INCREMENT` |
-  | boolean | `boolean` | `TINYINT(1)` |
-  | decimal(15,2) | `numeric(15,2)` | `DECIMAL(15,2)` |
-  | json | `jsonb` | `JSON` (an alias for `LONGTEXT` plus a validity check) |
-  | timestamp | `timestamptz` | `DATETIME`, stored in UTC |
-  | upsert | `INSERT … ON CONFLICT (game_id, contest_number) DO UPDATE` | `INSERT … ON DUPLICATE KEY UPDATE` |
-  | window functions, CHECK | yes | from 10.2 |
+  | generic | MySQL 8 |
+  |---|---|
+  | id PK | `BIGINT UNSIGNED AUTO_INCREMENT` |
+  | boolean | `TINYINT(1)` (`BOOLEAN`) |
+  | decimal(15,2) | `DECIMAL(15,2)` |
+  | json | `JSON` (binary storage, validated on insert) |
+  | timestamp | `DATETIME`, stored in UTC |
+  | upsert | `INSERT … ON DUPLICATE KEY UPDATE`. It fires on *any* unique key; it's safe on `draws` because (`game_id`, `contest_number`) is the only one besides the PK |
+  | unique with NULLs | multiple NULLs are allowed, so unique (`draw_id`, `draw_position`) works as intended |
 
-- **Migrations from the first deploy.** In Dunedin the dev database is disposable and `schema.sql` is edited directly. Here, `users` and `tickets` can't be rebuilt from the xlsx or the API, so production needs real migrations from day one.
-- **Importer language and xlsx reader.** A small zip + XML reader, or a library that copes with the file's defects (see §7).
+- **Migrations from the first deploy, with Alembic.** In Dunedin the dev database is disposable and `schema.sql` is edited directly. Here, `users` and `tickets` can't be rebuilt from the xlsx or the API, so production needs real migrations from day one. **MySQL DDL isn't transactional:** a migration that fails halfway leaves the schema half-changed. Rules: one schema change per migration, and a `mysqldump` before every deploy that migrates.
+- **Data writes are still transactional** (InnoDB): `save_draw()` and the all-or-nothing importer work as described.
+- **Importer language and xlsx reader:** Python, with a small stdlib `zipfile` + `xml.etree` reader (see §7). The file breaks openpyxl.
 
 ## 10. Not modeled yet (other games)
 
