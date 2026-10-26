@@ -14,7 +14,7 @@ def create_app() -> FastAPI:
     check_auth_config()
 
     from oraculoto.api.envelope import install_handlers
-    from oraculoto.api.routes import results, service, stats
+    from oraculoto.api.routes import guesses, results, service, stats
 
     app = FastAPI(
         title="Oraculoto",
@@ -24,6 +24,6 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     install_handlers(app)
-    for module in (service, results, stats):
+    for module in (service, results, stats, guesses):
         app.include_router(module.router, prefix=PREFIX)
     return app

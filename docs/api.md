@@ -1,6 +1,8 @@
 # API — plan
 
-Status (2026-10-24): **read endpoints built** (roadmap step 2, local only; not yet deployed): `/health`, `/games`, draws and the four stats endpoints, with the §3 conventions. Code: `src/oraculoto/api/` (app, envelope, auth stub, routes), queries in `src/oraculoto/db/results.py` and `src/oraculoto/db/stats.py`, CGI entry `src/oraculoto/api/cgi.py` behind `public/`. Tests: `tests/test_api.py` (sample data), `tests/test_api_stats.py` (the §6 values of `docs/database.md` on the real file), `tests/test_cgi.py` (through `public/index.cgi`). Auth is still the dev stub (§10); guesses, backtests, `/me` and tickets are not built. Stack decided: Python + FastAPI, PyJWT for Firebase tokens, MySQL 8, served as plain CGI on DreamHost shared hosting (see `blueprint.md` and §10).
+Status (2026-10-24): **read endpoints built** (roadmap step 2, local only; not yet deployed): `/health`, `/games`, draws and the four stats endpoints, with the §3 conventions. Code: `src/oraculoto/api/` (app, envelope, auth stub, routes), queries in `src/oraculoto/db/results.py` and `src/oraculoto/db/stats.py`, CGI entry `src/oraculoto/api/cgi.py` behind `public/`. Tests: `tests/test_api.py` (sample data), `tests/test_api_stats.py` (the §6 values of `docs/database.md` on the real file), `tests/test_cgi.py` (through `public/index.cgi`). Auth is still the dev stub (§10); `/me` and tickets are not built.
+
+Status (2026-10-26): **guess functions and backtests built** (roadmap step 3, local only): `GET /functions` and `GET /games/{game}/backtest`, the registry with the four deterministic reference strategies, the exact random baseline. Code: `src/oraculoto/guess/` (contract in `base.py`, strategies in `reference.py`, scoring in `backtest.py`), history loader `load_history()` in `src/oraculoto/db/results.py`, routes in `src/oraculoto/api/routes/guesses.py`. Tests: `tests/test_guess.py` (no database), `tests/test_backtest_reference.py` (the §5 table on the real file), plus validation in `tests/test_api.py`. **`GET /games/{game}/guess` is not built**: its rules are still to be defined (decided 2026-10-26). Stack decided: Python + FastAPI, PyJWT for Firebase tokens, MySQL 8, served as plain CGI on DreamHost shared hosting (see `blueprint.md` and §10).
 
 Local development: `uv run uvicorn oraculoto.api.app:create_app --factory --reload`, then `http://127.0.0.1:8000/api/v1/docs`.
 
@@ -118,8 +120,13 @@ As built:
 | method + path | returns |
 |---|---|
 | `GET /functions` | available guess functions: key, version, description, parameters |
-| `GET /games/{game}/guess?function=&k=6&seed=&…params` | `k` numbers from the function over the full history, plus the honest odds (k = 6: 1 in 50,063,860). Not stored |
-| `GET /games/{game}/backtest?function=&k=6&from=&to=&seed=&…params` | how the function would have scored (§5) |
+| `GET /games/{game}/guess?function=&k=6&…params` | **not built; rules to be defined.** `k` numbers from the function over the full history, plus the honest odds (k = 6: 1 in 50,063,860). Not stored |
+| `GET /games/{game}/backtest?function=&k=6&from=&to=&…params` | how the function would have scored (§5) |
+
+As built:
+- **functions:** a plain array of `{ key, version, ref, description, params: [{ name, type, default, min, max, description }] }`, `ref` being `key@version`.
+- **backtest:** `function` is required (unknown → 400). `k` defaults to `bet_min_numbers` and must be within the game's bet sizes. `from`/`to` are target contests; `to` defaults to the latest, `from` to the last 100 contests up to `to`. Every other query parameter goes to the function: undeclared, invalid or repeated → 400.
+- Response: `{ function: { key, version, ref }, params, k, window: { from, to, draws }, average_hits, hits: [{ hits, draws }], tiers: [{ hits, draws, expected }], baseline: { average_hits, standard_error, z_score } }`. `hits` runs from 0 to min(k, balls_drawn). A tier counts the draws where the guess held at least one winning combination of it (§6), so with k = 6 a 5-hit draw counts for tier 5 only. Floats have 4 significant digits; `z_score` = (average − baseline) / standard error. An empty window gives 0 draws and `null`s, not an error.
 
 **Tickets** (only the caller's own)
 
@@ -143,35 +150,37 @@ Rules for creating a ticket:
 **Contract for the functions you'll send:**
 
 ```
-guess(history, k, params, rng) -> k distinct numbers in the game's range
+guess(game, history, k, params) -> k distinct numbers in the game's range
 
+game:    the game's rules (balls drawn, range, bet sizes)
 history: the contests strictly before the target, oldest first;
-         each one = contest number, date, balls (sorted), draw positions or nothing
+         each one = contest number, date, balls (sorted), draw order or nothing
 k:       how many numbers to return (6–20 for Mega-Sena)
 params:  the function's own options, validated against its declared parameters
-rng:     a seeded random generator, the only randomness allowed
 ```
 
-- **Pure:** no database, no network, no clock, no global state. That's what makes a backtest honest: a function can't peek at the draw it's guessing, and the same seed gives the same answer.
+(Changed 2026-10-26: `game` added, since the function otherwise can't know the range; `rng` dropped, along with the `random` strategy. Guesses are deterministic. A function that ever wants randomness brings its own, seeded from its params.)
+
+- **Pure:** no database, no network, no clock, no randomness, no global state. That's what makes a backtest honest: a function can't peek at the draw it's guessing, and the same input gives the same answer. As built, `GuessFunction.guess()` enforces the output (k distinct ints in range; anything else is a `GuessContractError`, a 500).
 - **Registered:** each function has a key, a version, a description and its parameters. If its behavior changes, bump the version, so a ticket's `source` (e.g. `hot_recent@1`) keeps meaning the same thing.
 
 **Backtest:**
-- **How it runs:** for each target contest N in `from`…`to`, call `guess(history before N, k, params, rng seeded by (seed, N))` and count the hits against draw N.
+- **How it runs:** for each target contest N in `from`…`to`, call `guess(game, history before N, k, params)` and count the hits against draw N.
 - **What it returns:**
   - average hits per draw, the hit distribution, and how many draws reached each prize tier
   - next to that, always the **random baseline**: expected average `k × balls_drawn / pool size` (0.6 for k = 6 on Mega-Sena), its standard error, and the expected number of prize-tier hits
-- **Cache:** results are cached on disk by (function and version, params, k, seed, from, to, latest contest). CGI keeps nothing in memory between requests. Nothing is stored in the database.
-- **Range cap:** at most 500 target contests per request (configurable); longer ranges get 400. Shared hosting kills long-running requests, so this is a hosting limit, not a rate limit.
+- **Cache:** none for now (decided 2026-10-26: measure first). Measured locally: loading the whole history takes ~0.12 s, and `hot`, the slowest reference strategy, scores 2,072 targets in ~1.6 s, so a 500-target request costs well under a second on top of CGI. If it's ever needed: on disk, keyed by (function@version, params, k, from, to, latest contest). Nothing is stored in the database.
+- **Range cap:** at most 500 target contests per request (`ORACULOTO_BACKTEST_MAX_CONTESTS`); longer ranges get 400. Shared hosting kills long-running requests, so this is a hosting limit, not a rate limit.
 
-**Reference strategies.** Ship these as built-in functions; they double as regression tests for the backtest. Measured on 2026-10-23 over target contests #1001–#3072 (2,072 draws):
+**Reference strategies.** Built in (`src/oraculoto/guess/reference.py`), except `random`, which was dropped with `rng` (the baseline is exact math, not a function); they double as regression tests for the backtest. Measured on 2026-10-23 over target contests #1001–#3072 (2,072 draws):
 
 | key | rule | average hits | draws with ≥ 4 hits |
 |---|---|---|---|
 | `random` | uniform | 0.600 expected | ~0.9 expected |
 | `hot` | 6 most frequent balls in all earlier draws; ties go to the lower ball | 0.612 | 0 |
-| `hot_recent` | the same, over the last 200 draws | 0.629 | 0 |
+| `hot_recent` | the same, over the last 200 draws (param `last`) | 0.629 | 0 |
 | `overdue` | 6 balls whose last appearance is oldest; ties go to the lower ball | 0.572 | 1 |
-| `repeat_last` | the previous draw's balls | 0.589 | 1 |
+| `repeat_last` | the previous draw's balls (for k > 6, filled from earlier draws, newest first) | 0.589 | 1 |
 
 The standard error over 2,072 draws is about 0.015, so all of them are within about 2 standard errors of random.
 
@@ -216,7 +225,7 @@ There are no admin HTTP endpoints in v1, which means less to attack.
   Token checks are tested with fake signing keys, never real Firebase.
 - **Stats:** endpoints return the known values from `docs/database.md` §6 (e.g. most frequent ball 10, drawn 359 times; least frequent 26, 250 times, over #1–#3072).
 - **Tickets:** the combinations table for k = 6…20; contest ranges; `pending`; another user's ticket → 404; only `label` can be changed.
-- **Backtest:** the reference strategies reproduce the numbers in §5 on the same data, and no function can see the target draw.
+- **Backtest:** the reference strategies reproduce the numbers in §5 on the same data, and no function can see the target draw. Both done (`tests/test_backtest_reference.py`, `tests/test_guess.py`).
 
 ## 9. Not in v1
 
@@ -231,7 +240,7 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 - **Auth:** PyJWT (+ `cryptography` for RS256) does the token checks in §2, behind a FastAPI dependency. Not `firebase-admin`: its import alone would add a big slice to every CGI request. Until step 5 that dependency is a dev stub that refuses to start outside dev.
   - As built (`src/oraculoto/api/auth.py`): `require_user` sits on every router except the one with `/health`. The stub wants `Authorization: Bearer <anything>` (else 401) and returns a fake admin. `create_app()` raises unless `ORACULOTO_ENV=dev`, so **the API can't be deployed until step 5**. `tests/test_api.py` checks that every route in the OpenAPI schema except `/health` answers 401 without a token.
   - The OpenAPI docs (`/api/v1/docs`, `/api/v1/openapi.json`) are public by decision (2026-10-24): the project will be open source, so the routes are public anyway. They list the routes, not data.
-- **Guess functions:** Python, one module per function, plus a registry (key, version, description, parameters).
+- **Guess functions:** Python, one module per function, plus a registry (key, version, description, parameters): `REGISTRY` in `src/oraculoto/guess/__init__.py`. The four reference strategies share one module, being a few lines each.
 - **Hosting: DreamHost shared hosting.**
   - **Plain CGI.** DreamHost removed Passenger from shared hosting, so Apache starts Python once per request. Proven by `cgi-test/` (since deleted) on 2026-10-24 (numbers in `blueprint.md`): about 1.3 s per request from Brazil, of which ~0.6 s is network.
   - The domain's web directory points to a `public/` folder holding only `.htaccess` (CGI on; everything that isn't a real file goes to `index.cgi`; the `Authorization` header passed through) and `index.cgi` (a shell wrapper that runs the app with the project's `.venv` Python). The code, `.env` and the docs stay outside the web root.

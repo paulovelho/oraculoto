@@ -26,6 +26,11 @@ def load_env(path: Path = PROJECT_ROOT / ".env") -> None:
         os.environ.setdefault(key.strip(), value)
 
 
+def backtest_max_contests() -> int:
+    """Most target contests one backtest request may score: shared hosting kills long requests."""
+    return int(os.environ.get("ORACULOTO_BACKTEST_MAX_CONTESTS") or 500)
+
+
 @dataclass(frozen=True)
 class DbSettings:
     host: str

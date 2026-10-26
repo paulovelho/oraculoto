@@ -79,7 +79,7 @@ def protected_paths() -> list[str]:
 )
 def test_every_route_but_health_needs_a_token(client, headers):
     paths = protected_paths()
-    assert len(paths) == 9
+    assert len(paths) == 11
     for path in paths:
         r = client.get(path, params={"balls": "10"}, headers=headers)
         assert r.status_code == 401, path
@@ -310,3 +310,56 @@ def test_gaps(client):
     w = {g["ball"]: g for g in get(client, "/games/megasena/stats/gaps", last=2)["items"]}
     assert w[41] == {"ball": 41, "last_seen": 2, "current_gap": 1, "longest_gap": None}
     assert w[4]["current_gap"] == 2 and w[4]["last_seen"] is None
+
+
+# ---------------------------------------------------------------- guess functions and backtests
+
+
+def test_functions(client):
+    fns = {f["key"]: f for f in get(client, "/functions")}
+    assert list(fns) == ["hot", "hot_recent", "overdue", "repeat_last"]
+    assert fns["hot_recent"]["ref"] == "hot_recent@1"
+    assert fns["hot_recent"]["params"] == [
+        {
+            "name": "last",
+            "type": "int",
+            "default": 200,
+            "min": 1,
+            "max": None,
+            "description": "how many of the latest draws to count",
+        }
+    ]
+
+
+def test_backtest_on_the_sample(client):
+    d = get(client, "/games/megasena/backtest", function="repeat_last", k=7)
+    assert d["window"] == {"from": 1, "to": 3, "draws": 3} and d["k"] == 7
+    assert len(d["hits"]) == 7  # 0 to 6 hits
+    assert d["baseline"]["average_hits"] == 0.7
+    assert get(client, "/games/megasena/backtest", function="hot", **{"from": 50})["window"] == {
+        "from": None,
+        "to": None,
+        "draws": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({"function": "nope"}, "unknown 'nope'"),
+        ({"function": "hot", "k": 5}, "k: must be 6-20"),
+        ({"function": "hot", "k": 21}, "k: must be 6-20"),
+        ({"function": "hot", "from": 3, "to": 2}, "is after"),
+        ({"function": "hot", "last": 5}, "hot has no parameter 'last'"),
+        ({"function": "hot_recent", "last": 0}, "last: must be >= 1"),
+        ({"function": "hot_recent", "last": "x"}, "last: expected int"),
+        ({"function": "hot_recent", "last": [5, 6]}, "more than once"),
+    ],
+)
+def test_backtest_bad_input(client, params, message):
+    err = get(client, "/games/megasena/backtest", 400, **params)
+    assert err["code"] == "invalid_input" and message in err["message"]
+
+
+def test_backtest_needs_a_function(client):
+    assert get(client, "/games/megasena/backtest", 400)["code"] == "invalid_input"

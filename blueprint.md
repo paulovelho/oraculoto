@@ -145,7 +145,7 @@ right now, your job will be only generate a plan.md file for each of the modules
 0. Stack and hosting (done). Caixa smoke test (done): blocked from data centers, so the fetcher runs at home. DreamHost MySQL is 8.0.41 (checked 2026-10-23). No Passenger on DreamHost; the CGI test passed (below).
 1. `schema.sql` / first migration, `save_draw()`, xlsx importer. **Done 2026-10-24** (local; not yet run on DreamHost).
 2. Read endpoints: `/health`, `/games`, draws, stats. Auth is a pluggable dependency, with a dev stub that refuses to start outside dev. **Done 2026-10-24** (local; served through `public/` + CGI, tested with a simulated CGI environment; not yet run on DreamHost, and it can't be until step 5 replaces the stub). `cgi-test/` deleted; its pieces live in `public/` and `src/oraculoto/api/cgi.py`.
-3. Guess functions + backtest, with the reference strategies as tests.
+3. Guess functions + backtest, with the reference strategies as tests. **Done 2026-10-26** (local): `GET /functions`, `GET /games/{game}/backtest`, four deterministic reference strategies that reproduce `docs/api.md` §5. Contract changed to `guess(game, history, k, params)` (no `rng`, no `random` strategy). No backtest cache (measure first). `GET /guess` is deferred until its rules are defined.
 4. Live crawler (Caixa JSON endpoint) with its schedule, plus the optional backfill.
 5. Firebase auth, invite list, tickets.
 

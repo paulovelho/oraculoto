@@ -3,11 +3,13 @@
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from itertools import groupby
 
 from sqlalchemy import Connection, func, select
 
 from oraculoto.db.draws import Game, Prize, WinnerLocation
 from oraculoto.db.schema import draw_balls, draw_prizes, draw_winner_locations, draws
+from oraculoto.guess.base import PastDraw
 
 
 @dataclass(frozen=True)
@@ -140,6 +142,29 @@ def latest_draw(conn: Connection, game: Game) -> DrawRecord | None:
     )
     found = _records(conn, rows)
     return found[0] if found else None
+
+
+def load_history(conn: Connection, game: Game, last_contest: int) -> list[PastDraw]:
+    """Every contest up to last_contest, oldest first, in the shape guess functions take."""
+    rows = conn.execute(
+        select(draws.c.contest_number, draws.c.draw_date, draw_balls.c.ball, draw_balls.c.draw_position)
+        .join(draw_balls, draw_balls.c.draw_id == draws.c.id)
+        .where(draws.c.game_id == game.id, draws.c.contest_number <= last_contest)
+        .order_by(draws.c.contest_number, draw_balls.c.ball)
+    )
+    history = []
+    for (contest, drawn_on), group in groupby(rows, key=lambda r: (r[0], r[1])):
+        drawn = [(ball, position) for _, _, ball, position in group]
+        known = all(pos is not None for _, pos in drawn)
+        history.append(
+            PastDraw(
+                contest=contest,
+                date=drawn_on,
+                balls=tuple(b for b, _ in drawn),
+                draw_order=tuple(b for b, _ in sorted(drawn, key=lambda bp: bp[1])) if known else None,
+            )
+        )
+    return history
 
 
 def list_draws(
