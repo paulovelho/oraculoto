@@ -31,8 +31,8 @@ class ApiError(Exception):
         self.message = message
 
 
-def ok(data: Any) -> JSONResponse:
-    return JSONResponse({"success": True, "data": data})
+def ok(data: Any, status: int = 200) -> JSONResponse:
+    return JSONResponse({"success": True, "data": data}, status_code=status)
 
 
 def error(status: int, code: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:

@@ -26,7 +26,8 @@ def dispose_engine() -> None:
 
 
 def get_conn(engine: Engine = Depends(get_engine)) -> Iterator[Connection]:
-    # Reads only: the transaction SQLAlchemy opens is rolled back when the connection closes.
+    # One connection per request, shared by the auth check and the route (FastAPI caches it).
+    # Code that writes commits; anything left uncommitted is rolled back when it closes.
     with engine.connect() as conn:
         yield conn
 

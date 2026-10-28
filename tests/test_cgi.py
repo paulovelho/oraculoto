@@ -10,6 +10,7 @@ import pytest
 from oraculoto.api.cgi import fix_environ
 from oraculoto.config import PROJECT_ROOT
 from oraculoto.importer.caixa_xlsx import import_xlsx
+from tests.auth_tokens import bearer, invite
 from tests.conftest import TEST_DB
 from tests.xlsx_builder import SAMPLE_ROWS, build_xlsx
 
@@ -38,6 +39,8 @@ def run_cgi(uri: str, tmp_path, **extra: str) -> tuple[int, dict[str, str], dict
         "QUERY_STRING": uri.partition("?")[2],
         "HTTP_AUTHORIZATION": "",
         "ORACULOTO_ENV": "dev",
+        "ORACULOTO_AUTH": "dev-key",
+        "ORACULOTO_VAR_DIR": os.environ["ORACULOTO_VAR_DIR"],
         "ORACULOTO_CGI_LOG": str(tmp_path / "cgi-error.log"),
         **{k: os.environ[k] for k in ("DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD") if k in os.environ},
         "DB_NAME": TEST_DB,
@@ -58,8 +61,11 @@ def test_health(sample, tmp_path):
 
 
 def test_authorization_through_the_rewrite_and_query_string(sample, tmp_path):
+    invite(sample)
     status, _, body = run_cgi(
-        "/api/v1/games/megasena/draws?limit=1&page=2", tmp_path, REDIRECT_HTTP_AUTHORIZATION="Bearer dev"
+        "/api/v1/games/megasena/draws?limit=1&page=2",
+        tmp_path,
+        REDIRECT_HTTP_AUTHORIZATION=bearer()["Authorization"],
     )
     assert status == 200, body
     assert (body["data"]["total"], [d["contest"] for d in body["data"]["items"]]) == (3, [2])

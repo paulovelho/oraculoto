@@ -7,6 +7,7 @@ dependencies = [
     "a2wsgi>=1.10.10",
     "alembic>=1.20.1",
     "fastapi>=0.162.0",
+    "pyjwt[crypto]>=2.15.1",
     "pymysql>=1.2.3",
     "sqlalchemy>=2.1.6",
 ]

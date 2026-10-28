@@ -17,16 +17,19 @@ from oraculoto.db import make_engine
 from oraculoto.db.draws import save_draw
 from oraculoto.db.schema import sync_runs
 from oraculoto.importer.caixa_xlsx import import_xlsx, parse_file
+from tests.auth_tokens import MEMBER, bearer, invite
 from tests.conftest import TEST_DB
 from tests.xlsx_builder import SAMPLE_ROWS, build_xlsx
 
-AUTH = {"Authorization": "Bearer dev"}
 
-
-def api_client(engine) -> TestClient:
+def api_client(engine, email: str | None = MEMBER) -> TestClient:
+    """A client logged in as an invited email, or with no token at all (email=None)."""
     app = create_app()
     app.dependency_overrides[get_engine] = lambda: engine
-    return TestClient(app)
+    if email is None:
+        return TestClient(app)
+    invite(engine, email)
+    return TestClient(app, headers=bearer(email))
 
 
 @pytest.fixture
@@ -41,7 +44,7 @@ def client(sample) -> TestClient:
 
 
 def get(client: TestClient, path: str, status: int = 200, **params):
-    r = client.get(PREFIX + path, params=params, headers=AUTH)
+    r = client.get(PREFIX + path, params=params)
     assert r.status_code == status, r.text
     body = r.json()
     assert body["success"] is (status < 400)
@@ -94,7 +97,7 @@ def test_health_reports_the_last_successful_crawl(sample, age, stale):
 def test_health_reports_a_dead_database():
     s = db_settings(name=TEST_DB)
     dead = make_engine(DbSettings(host=s.host, port=1, name=s.name, user=s.user, password=s.password))
-    r = api_client(dead).get(f"{PREFIX}/health")
+    r = api_client(dead, None).get(f"{PREFIX}/health")
     assert r.status_code == 503
     assert r.json() == {
         "success": False,
@@ -102,33 +105,58 @@ def test_health_reports_a_dead_database():
     }
 
 
-def protected_paths() -> list[str]:
-    paths = [p for p in create_app().openapi()["paths"] if p != f"{PREFIX}/health"]
-    return [p.replace("{game}", "megasena").replace("{contest}", "1") for p in paths]
+def protected_routes() -> list[tuple[str, str]]:
+    """(method, path) of every route but /health, with sample values in the path."""
+    routes = []
+    for path, methods in create_app().openapi()["paths"].items():
+        if path == f"{PREFIX}/health":
+            continue
+        path = path.replace("{game}", "megasena").replace("{contest}", "1").replace("{ticket_id}", "1")
+        routes += [(method.upper(), path) for method in methods]
+    return routes
 
 
 @pytest.mark.parametrize(
-    "headers", [{}, {"Authorization": ""}, {"Authorization": "Basic abc"}, {"Authorization": "Bearer "}]
+    "headers",
+    [
+        {},
+        {"Authorization": ""},
+        {"Authorization": "Basic abc"},
+        {"Authorization": "Bearer "},
+        {"Authorization": "Bearer dev"},
+        {"Authorization": "Bearer a.b.c"},
+    ],
 )
-def test_every_route_but_health_needs_a_token(client, headers):
-    paths = protected_paths()
-    assert len(paths) == 11
-    for path in paths:
-        r = client.get(path, params={"balls": "10"}, headers=headers)
-        assert r.status_code == 401, path
+def test_every_route_but_health_needs_a_token(sample, headers):
+    client = api_client(sample, None)
+    routes = protected_routes()
+    assert len(routes) == 18
+    for method, path in routes:
+        r = client.request(method, path, params={"balls": "10"}, headers=headers, json={})
+        assert r.status_code == 401, (method, path)
         assert r.json()["error"]["code"] == "unauthorized"
 
 
-def test_refuses_to_start_outside_dev(monkeypatch):
+def test_dev_key_refuses_to_start_outside_dev(monkeypatch):
     monkeypatch.setenv("ORACULOTO_ENV", "production")
-    with pytest.raises(RuntimeError, match="ORACULOTO_ENV"):
+    with pytest.raises(RuntimeError, match="ORACULOTO_ENV='production'"):
+        create_app()
+
+
+def test_firebase_needs_a_project_id(monkeypatch):
+    monkeypatch.setenv("ORACULOTO_AUTH", "firebase")
+    monkeypatch.delenv("FIREBASE_PROJECT_ID", raising=False)
+    with pytest.raises(RuntimeError, match="FIREBASE_PROJECT_ID"):
+        create_app()
+    monkeypatch.setenv("ORACULOTO_AUTH", "magic")
+    with pytest.raises(RuntimeError, match="ORACULOTO_AUTH='magic'"):
         create_app()
 
 
 def test_unknown_path_and_wrong_method_use_the_envelope(client):
-    r = client.get(f"{PREFIX}/nope", headers=AUTH)
+    r = client.get(f"{PREFIX}/nope")
     assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
-    r = client.post(f"{PREFIX}/games", headers=AUTH)
+    r = client.post(f"{PREFIX}/games")
     assert r.status_code == 405 and r.json()["error"]["code"] == "method_not_allowed"
 
 
@@ -205,7 +233,7 @@ def test_latest(client):
 
 
 def test_latest_without_draws(clean_db):
-    r = api_client(clean_db).get(f"{PREFIX}/games/megasena/draws/latest", headers=AUTH)
+    r = api_client(clean_db).get(f"{PREFIX}/games/megasena/draws/latest")
     assert r.status_code == 404
 
 

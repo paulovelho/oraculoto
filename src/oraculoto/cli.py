@@ -154,6 +154,50 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 1 if report.problem else 0
 
 
+def cmd_users(args: argparse.Namespace) -> int:
+    from oraculoto.db import make_engine
+    from oraculoto.db import users as db
+
+    engine = make_engine()
+    try:
+        with engine.begin() as conn:
+            if args.action == "list":
+                for u in db.list_users(conn):
+                    login = u.last_login_at.isoformat(sep=" ") if u.last_login_at else "never logged in"
+                    print(f"{u.email}\t{u.role}\t{u.status}\t{login}")
+                return 0
+            if args.action == "invite":
+                user = db.invite(conn, args.email, "admin" if args.admin else "member")
+            else:
+                user = db.set_status(conn, args.email, "blocked" if args.action == "block" else "active")
+    except (ValueError, LookupError) as e:
+        print(f"users {args.action} failed: {e}", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+    print(f"{user.email}: {user.role}, {user.status}")
+    return 0
+
+
+def cmd_dev_token(args: argparse.Namespace) -> int:
+    from oraculoto.auth.keys import DevKey
+    from oraculoto.config import load_env, var_dir
+
+    load_env()
+    lifetime = -120 if args.expired else args.minutes * 60  # past the 60 s leeway
+    print(
+        DevKey(var_dir() / "dev-key.pem").sign(
+            args.email.strip().lower(),
+            uid=args.uid,
+            name=args.name,
+            verified=not args.unverified,
+            provider=args.provider,
+            lifetime_seconds=lifetime,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oraculoto", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -188,6 +232,32 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="server: save the fetcher's lines (stdin) through save_draw()")
     p.add_argument("--game", default="megasena", help="game slug (default: megasena)")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("users", help="the invite list: invite, block, unblock, list")
+    users_sub = p.add_subparsers(dest="action", required=True)
+    for action, help_text in (
+        ("invite", "add an email to the invite list"),
+        ("block", "refuse this user's logins"),
+        ("unblock", "accept this user's logins again"),
+    ):
+        a = users_sub.add_parser(action, help=help_text)
+        a.add_argument("email")
+        if action == "invite":
+            a.add_argument("--admin", action="store_true", help="role admin (no extra powers in v1)")
+    users_sub.add_parser("list", help="every invited user")
+    p.set_defaults(func=cmd_users)
+
+    p = sub.add_parser(
+        "dev-token", help="dev: print a token signed by the local dev key (API with ORACULOTO_AUTH=dev-key)"
+    )
+    p.add_argument("email")
+    p.add_argument("--uid", help="Firebase uid (default: derived from the email)")
+    p.add_argument("--name", help="display name claim")
+    p.add_argument("--minutes", type=int, default=60, help="lifetime (default: 60, as Firebase)")
+    p.add_argument("--expired", action="store_true", help="already expired")
+    p.add_argument("--unverified", action="store_true", help="email_verified = false")
+    p.add_argument("--provider", default="google.com", help="sign_in_provider (default: google.com)")
+    p.set_defaults(func=cmd_dev_token)
     return parser
 
 

@@ -3,7 +3,10 @@
 Needs the local MySQL from docker-compose.yml (`docker compose up -d`).
 """
 
+import atexit
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,12 +19,26 @@ from oraculoto.db import make_engine
 from oraculoto.db.draws import Game, get_game
 from oraculoto.importer.caixa_xlsx import import_xlsx
 
+# Logins in tests: the dev signing key, in a throwaway folder (set before .env is read, so they win).
+os.environ["ORACULOTO_AUTH"] = "dev-key"
+os.environ["ORACULOTO_VAR_DIR"] = tempfile.mkdtemp(prefix="oraculoto-test-var-")
+atexit.register(shutil.rmtree, os.environ["ORACULOTO_VAR_DIR"], ignore_errors=True)
+
 load_env()
 TEST_DB = os.environ.get("TEST_DB_NAME", "oraculoto_test")
 if TEST_DB == os.environ.get("DB_NAME"):
     raise RuntimeError("TEST_DB_NAME must not be the main database: the tests wipe it")
 
-DATA_TABLES = ["draw_winner_locations", "draw_prizes", "draw_balls", "draws", "sync_runs"]
+DATA_TABLES = [
+    "draw_winner_locations",
+    "draw_prizes",
+    "draw_balls",
+    "draws",
+    "sync_runs",
+    "ticket_numbers",
+    "tickets",
+    "users",
+]
 
 
 @pytest.fixture(scope="session")
@@ -45,7 +62,7 @@ def engine() -> Engine:
 
 @pytest.fixture
 def clean_db(engine: Engine) -> Engine:
-    """An empty set of draws (games stay seeded)."""
+    """No draws, users or tickets (games stay seeded)."""
     with engine.begin() as conn:
         conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
         for table in DATA_TABLES:

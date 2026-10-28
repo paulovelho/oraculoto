@@ -26,6 +26,16 @@ def load_env(path: Path = PROJECT_ROOT / ".env") -> None:
         os.environ.setdefault(key.strip(), value)
 
 
+def var_dir() -> Path:
+    """Files the app writes for itself (key caches, the dev signing key). Outside the web root."""
+    return Path(os.environ.get("ORACULOTO_VAR_DIR") or PROJECT_ROOT / "var")
+
+
+def ticket_max_span() -> int:
+    """Most contests one ticket may cover, so a typo can't create a 10,000-contest teimosinha."""
+    return int(os.environ.get("ORACULOTO_TICKET_MAX_SPAN") or 52)
+
+
 def backtest_max_contests() -> int:
     """Most target contests one backtest request may score: shared hosting kills long requests."""
     return int(os.environ.get("ORACULOTO_BACKTEST_MAX_CONTESTS") or 500)

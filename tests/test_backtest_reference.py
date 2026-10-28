@@ -9,6 +9,7 @@ from oraculoto.db.draws import get_game
 from oraculoto.db.results import load_history
 from oraculoto.guess import REGISTRY
 from oraculoto.guess.backtest import backtest
+from tests.auth_tokens import bearer, invite
 
 MS = f"{PREFIX}/games/megasena"
 
@@ -26,7 +27,8 @@ def client(imported) -> TestClient:
     engine, _ = imported
     app = create_app()
     app.dependency_overrides[get_engine] = lambda: engine
-    return TestClient(app, headers={"Authorization": "Bearer dev"})
+    invite(engine)
+    return TestClient(app, headers=bearer())
 
 
 def test_history(history):

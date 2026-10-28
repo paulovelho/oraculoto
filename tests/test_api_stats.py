@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from oraculoto.api.app import PREFIX, create_app
 from oraculoto.api.deps import get_engine
+from tests.auth_tokens import bearer, invite
 
 MS = f"{PREFIX}/games/megasena"
 
@@ -14,7 +15,8 @@ def client(imported) -> TestClient:
     engine, _ = imported
     app = create_app()
     app.dependency_overrides[get_engine] = lambda: engine
-    return TestClient(app, headers={"Authorization": "Bearer dev"})
+    invite(engine)
+    return TestClient(app, headers=bearer())
 
 
 def data(client: TestClient, path: str, **params):

@@ -2,6 +2,8 @@
 
 Status (2026-10-24): **read endpoints built** (roadmap step 2, local only; not yet deployed): `/health`, `/games`, draws and the four stats endpoints, with the §3 conventions. Code: `src/oraculoto/api/` (app, envelope, auth stub, routes), queries in `src/oraculoto/db/results.py` and `src/oraculoto/db/stats.py`, CGI entry `src/oraculoto/api/cgi.py` behind `public/`. Tests: `tests/test_api.py` (sample data), `tests/test_api_stats.py` (the §6 values of `docs/database.md` on the real file), `tests/test_cgi.py` (through `public/index.cgi`). Auth is still the dev stub (§10); `/me` and tickets are not built.
 
+Status (2026-10-28): **auth, invite list and tickets built** (roadmap step 5, local only): Firebase token checks with PyJWT (§2), `GET /me`, the ticket endpoints and their results (§4, §6), and `users` / `dev-token` on the command line (§7). The dev stub is gone. Code: `src/oraculoto/auth/` (token checks, Google's key cache, the dev key), `src/oraculoto/api/auth.py` (the dependency), `src/oraculoto/db/users.py`, `src/oraculoto/db/tickets.py`, `src/oraculoto/tickets.py` (rules and scoring), `src/oraculoto/api/routes/me.py`. Tests: `tests/test_auth.py` (no database), `tests/test_tickets.py` (no database), `tests/test_me.py`. No Firebase project exists yet, so only the dev key has signed real requests.
+
 Status (2026-10-26): **guess functions and backtests built** (roadmap step 3, local only): `GET /functions` and `GET /games/{game}/backtest`, the registry with the four deterministic reference strategies, the exact random baseline. Code: `src/oraculoto/guess/` (contract in `base.py`, strategies in `reference.py`, scoring in `backtest.py`), history loader `load_history()` in `src/oraculoto/db/results.py`, routes in `src/oraculoto/api/routes/guesses.py`. Tests: `tests/test_guess.py` (no database), `tests/test_backtest_reference.py` (the §5 table on the real file), plus validation in `tests/test_api.py`. **`GET /games/{game}/guess` is not built**: its rules are still to be defined (decided 2026-10-26). Stack decided: Python + FastAPI, PyJWT for Firebase tokens, MySQL 8, served as plain CGI on DreamHost shared hosting (see `blueprint.md` and §10).
 
 Local development: `uv run uvicorn oraculoto.api.app:create_app --factory --reload`, then `http://127.0.0.1:8000/api/v1/docs`.
@@ -61,7 +63,7 @@ No rate limits. Expensive endpoints still validate their input (backtest range, 
   - Balls: integers.
 - **Lists:** `page` (starts at 1) and `limit` (default 20, max 100). The response is `{ items, page, limit, total }`.
 - **Errors:** 400 invalid input, 401 bad token, 403 not invited or blocked, 404 not found. Another user's ticket is a 404, never a 403 (same as Dunedin), so the API doesn't confirm that it exists.
-  - Codes in use: `invalid_input` (400, including every query-parameter check; FastAPI's 422 is never sent), `unauthorized` (401), `not_found` (404: unknown path, game or contest), `method_not_allowed` (405), `db_unavailable` (503, `/health` only), `internal` (500; the traceback goes to the log, never to the client). Step 5 adds `not_invited` and `blocked` (403).
+  - Codes in use: `invalid_input` (400, including every query-parameter check; FastAPI's 422 is never sent), `unauthorized` (401), `not_found` (404: unknown path, game or contest), `method_not_allowed` (405), `db_unavailable` (503, `/health` only), `internal` (500; the traceback goes to the log, never to the client). `not_invited` and `blocked` (403; an unverified email or a non-Google sign-in is `not_invited` too), `auth_unavailable` (503: Google's keys can't be fetched and none are cached).
 - **Timestamps** (e.g. the last sync): ISO 8601 in UTC, `2026-10-24T14:11:16Z`.
 
 ## 4. Endpoints
@@ -145,6 +147,14 @@ Rules for creating a ticket:
 - The span is capped (configurable), so a typo can't create a 10,000-contest ticket.
 - Tickets for contests already drawn are allowed: users can register old bets.
 
+As built:
+- **POST** body: `game`, `numbers`, `first_contest`, `last_contest` (optional), `label` (optional, ≤120, trimmed, empty = null), `source` (optional). Any other field → 400, so the owner can't be set from the body. Contests are 1–999,999. The span cap is `ORACULOTO_TICKET_MAX_SPAN` (default 52, decided 2026-10-28). Unknown game → 400. Answers 201 with the ticket.
+- **`source`** (decided 2026-10-28): `null` by default, or a guess function's current `key@version` from `GET /functions` (anything else → 400). It's still the user's claim: nothing proves the numbers came from that function. `manual` no longer exists.
+- A ticket is `{ id, game, numbers (ascending), first_contest, last_contest, label, source, created_at }`.
+- **GET list:** newest first, §3 paging; `game=` filters (unknown → 404).
+- **PATCH:** exactly `{ "label": … }`; any other field → 400.
+- **DELETE:** `{ success: true, data: null }`.
+
 ## 5. Guess functions and backtests
 
 **Contract for the functions you'll send:**
@@ -204,10 +214,18 @@ For each contest from `first_contest` to `last_contest`:
   - Amounts are gross (before income tax), as Caixa published them.
   - Mega da Virada's no-rollover rule is already reflected in the published prizes, so it needs no special case.
 - **Flag:** `registered_after_draw` when the ticket was created on or after that contest's draw date. It keeps records honest, e.g. for tickets whose `source` is a guess function.
+  - Conservative by design: `created_at` is UTC and draws happen in the Brazilian evening, so a ticket saved earlier on the draw day is flagged too.
+
+As built: `{ ticket, items, total }`, one item per contest: `{ contest, status, date, hits, matched, prizes: [{ hits, combinations, prize_per_winner, amount }], total, registered_after_draw }`.
+- `status`: `drawn`; `pending` (after our latest contest); or `missing` (before our latest contest but not stored: a gap in our data, not a future draw). Only `drawn` items have values; the others have `null`s and no prizes.
+- `prizes` lists only the tiers the ticket won. An unknown tier prize makes its `amount` and the totals `null`.
+- The top-level `total` sums the drawn contests.
+- Amounts are what Caixa paid per winner. A ticket that wasn't really played is scored with the published prize, which is 0 for a tier nobody won.
 
 ## 7. Admin (command line only in v1)
 
-- `users invite <email> [--admin]`, `users block <email>`, `users unblock <email>`, `users list`
+- `users invite <email> [--admin]`, `users block <email>`, `users unblock <email>`, `users list` (built 2026-10-28). Emails are stored lowercase. `--admin` sets `role`, which nothing reads in v1.
+- On the server: `deploy/create-admin.sh <email>` runs `users invite <email> --admin` with the project's `.venv` and `.env`, from any folder.
 - The importer and crawler commands are described in their own plans.
 
 There are no admin HTTP endpoints in v1, which means less to attack.
@@ -237,8 +255,12 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 ## 10. Stack and deployment (decided 2026-10-23)
 
 - **Framework:** FastAPI. Its automatic OpenAPI docs replace Dunedin's hand-written `openapi.yaml`.
-- **Auth:** PyJWT (+ `cryptography` for RS256) does the token checks in §2, behind a FastAPI dependency. Not `firebase-admin`: its import alone would add a big slice to every CGI request. Until step 5 that dependency is a dev stub that refuses to start outside dev.
-  - As built (`src/oraculoto/api/auth.py`): `require_user` sits on every router except the one with `/health`. The stub wants `Authorization: Bearer <anything>` (else 401) and returns a fake admin. `create_app()` raises unless `ORACULOTO_ENV=dev`, so **the API can't be deployed until step 5**. `tests/test_api.py` checks that every route in the OpenAPI schema except `/health` answers 401 without a token.
+- **Auth:** PyJWT (+ `cryptography` for RS256) does the token checks in §2, behind a FastAPI dependency. Not `firebase-admin`: its import alone would add a big slice to every CGI request. 
+  - As built (2026-10-28): `require_user` sits on every route except `/health`, and shares the request's one database connection with the route. `ORACULOTO_AUTH` picks who signs the tokens: `firebase` (the default; needs `FIREBASE_PROJECT_ID`) or `dev-key`. `create_app()` raises on a bad setup. `tests/test_api.py` checks that every method of every route except `/health` answers 401 without a valid token.
+  - **Google's keys:** the JWK endpoint (`securetoken@system.gserviceaccount.com`), fetched with stdlib `urllib` and cached in `var/cache/google-jwks.json` for `max-age` (written to a temp file, then renamed, because CGI processes can race). An unknown `kid` triggers a refetch at most once a minute. If Google is down, an expired copy that has the key is still used; with no usable copy → 503 `auth_unavailable`.
+  - **Dev key** (decided 2026-10-28; replaces the stub, whose fake user had no `users` row and so couldn't own tickets): `ORACULOTO_AUTH=dev-key` checks tokens against a local RSA key (`var/dev-key.pem`, created on first use, mode 600) instead of Google's, for the fake project `oraculoto-dev`. Everything after the signature is the real code path. It only runs with `ORACULOTO_ENV=dev`, and its tokens name a project production doesn't accept. `oraculoto dev-token <email>` prints one (`--uid`, `--name`, `--expired`, `--unverified`, `--provider`, `--minutes`); the tests sign with the same code.
+  - `GET /me` also refreshes `display_name` and `photo_url` from the token (the doc only asked for it on the first login), so a changed Google photo shows up.
+  - Cost: importing PyJWT + `cryptography` takes ~95 ms locally (measured 2026-10-28), out of ~570 ms for all the app's imports. Paid on every CGI request.
   - The OpenAPI docs (`/api/v1/docs`, `/api/v1/openapi.json`) are public by decision (2026-10-24): the project will be open source, so the routes are public anyway. They list the routes, not data.
 - **Guess functions:** Python, one module per function, plus a registry (key, version, description, parameters): `REGISTRY` in `src/oraculoto/guess/__init__.py`. The four reference strategies share one module, being a few lines each.
 - **Hosting: DreamHost shared hosting.**

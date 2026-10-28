@@ -187,7 +187,7 @@ Logging in never creates a row; only the admin command line does. The login flow
 | `game_id` | FK → `games` | no | |
 | `first_contest`, `last_contest` | int | no | check `last_contest >= first_contest`. Equal for a single bet; a range for a teimosinha |
 | `label` | varchar(120) | yes | e.g. "bolão do escritório" |
-| `source` | varchar(64) | no | default `manual`, or the guess function that produced the numbers (e.g. `hot_recent@1`). Optional; drop it if unwanted |
+| `source` | varchar(64) | yes | the guess function the user says produced the numbers (e.g. `hot_recent@1`), checked against the registry; NULL when not stated. Nullable with no default since migration 0004 (decided 2026-10-28; it was `manual`, not null) |
 | `created_at`, `updated_at` | timestamp | no | |
 
 Index (`game_id`, `first_contest`, `last_contest`). Numbers and contests can't change after saving; only `label` can. Otherwise a ticket's results could be rewritten after the draw.

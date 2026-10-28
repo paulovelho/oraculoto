@@ -164,7 +164,7 @@ tickets = Table(
     Column("first_contest", Integer, nullable=False),
     Column("last_contest", Integer, nullable=False),
     Column("label", String(120), nullable=True),
-    Column("source", String(64), nullable=False, server_default="manual"),
+    Column("source", String(64), nullable=True),  # a guess function ref (key@version); NULL: not stated
     *timestamps(),
     Index(None, "game_id", "first_contest", "last_contest"),
     CheckConstraint("first_contest >= 1 AND last_contest >= first_contest", name="contests"),

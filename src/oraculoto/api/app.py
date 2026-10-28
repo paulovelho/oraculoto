@@ -9,12 +9,12 @@ PREFIX = "/api/v1"
 
 def create_app() -> FastAPI:
     load_env()
-    from oraculoto.api.auth import check_auth_config
+    from oraculoto.api.auth import auth_config
 
-    check_auth_config()
+    auth_config()
 
     from oraculoto.api.envelope import install_handlers
-    from oraculoto.api.routes import guesses, results, service, stats
+    from oraculoto.api.routes import guesses, me, results, service, stats
 
     app = FastAPI(
         title="Oraculoto",
@@ -24,6 +24,6 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     install_handlers(app)
-    for module in (service, results, stats, guesses):
+    for module in (service, me, results, stats, guesses):
         app.include_router(module.router, prefix=PREFIX)
     return app
