@@ -290,6 +290,11 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 
+[package.optional-dependencies]
+fetch = [
+    { name = "httpx2" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "httpx2" },
@@ -303,9 +308,11 @@ requires-dist = [
     { name = "a2wsgi", specifier = ">=1.10.10" },
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "httpx2", marker = "extra == 'fetch'", specifier = ">=2.16.0" },
     { name = "pymysql", specifier = ">=1.2.3" },
     { name = "sqlalchemy", specifier = ">=2.1.6" },
 ]
+provides-extras = ["fetch"]
 
 [package.metadata.requires-dev]
 dev = [

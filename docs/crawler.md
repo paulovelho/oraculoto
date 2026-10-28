@@ -2,6 +2,17 @@
 
 Status (2026-10-23): design ready, no code yet. Stack decided: Python + httpx. Caixa blocks data-center IPs, so the run is split: a **fetcher on the home machine** talks to Caixa, and the **server** (DreamHost) decides what to fetch and saves it (§7).
 
+Status (2026-10-28): **built** (roadmap step 4, local only; the server half isn't deployed yet). Code: `src/oraculoto/crawler/` (`protocol.py` the plan, lines and classification; `caixa.py` the §4 field map; `fetch.py` the home half; `plan.py` and `ingest.py` the server half), commands `crawl-plan`, `fetch`, `ingest` in `src/oraculoto/cli.py`, systemd units in `deploy/systemd/`. Tests: `tests/test_crawler_parse.py`, `tests/test_crawler_fetch.py`, `tests/test_crawler_ingest.py`, with responses recorded on 2026-10-28 in `tests/fixtures/caixa/`. First real run on 2026-10-28 (home → local MySQL): refreshed #3070–#3072, saved #3073–#3076, stopped at #3077. As built, where it differs from or adds to the plan below:
+- **HTTP client:** `httpx2` (httpx's successor, already locked for the tests), installed only with the `fetch` extra: `uv sync --extra fetch`. The server never installs it.
+- **Retries:** first try + 3 retries after 2 s / 4 s / 8 s, so at most 4 requests per contest. Only for timeouts, connection errors and 5xx that aren't "not drawn yet". 403/429 and a 200 HTML page are `blocked`, never retried.
+- **Lines** (§7): `fetch` writes a `plan` line (the plan it followed), one `response` line per contest (`contest`, `http_status`, `content_type`, `classification`, `attempts`, `error`, `body`) and an `end` line. `ingest` reclassifies each body itself and doesn't trust the label. With no `end` line the run was cut off: status `error`.
+- **One transaction per contest** (decided 2026-10-28): `ingest` saves each found contest on its own and stops at the first line it can't accept (blocked, Caixa error, malformed, unparsable, not in the plan, or "not drawn" for a contest the plan says exists). What it saved before that stays; status `error`. The `sync_runs` row is written as `running` first, so a run that dies leaves a trace.
+- **Local runs are a pipe** (decided 2026-10-28): `oraculoto crawl-plan | oraculoto fetch --plan - | oraculoto ingest`. `fetch --remote dh` runs the same pipeline over SSH (`--remote-cmd` gives oraculoto's path on the server) and streams into the remote `ingest`, so a backfill is saved as it goes. `fetch --plan FILE > lines.jsonl` keeps the raw responses to re-ingest later without asking Caixa again.
+- **Backfill** never goes past the highest stored contest: new contests are the normal run's job. On an empty database, import the xlsx first.
+- **`raw` of a location** follows the xlsx spelling: `CITY/UF`, and `CANAL ELETRONICO` alone for online sales. #1, #2955 and #3072 parse to the same data as the xlsx, apart from the API-only fields.
+- **Staleness alarm:** "today" is Brasília's date. The run's status becomes `error` with a message starting `stale:`.
+- **`/health`** now reports `last_crawl` (latest `ok` / `nothing_new` run of kind `crawl`; xlsx imports don't count) and `stale` (no such run, or older than 2 days).
+
 ## 1. Goal
 
 Keep `draws` complete and current for each game:

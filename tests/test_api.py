@@ -4,15 +4,18 @@ The stats against the real file are in test_api_stats.py.
 """
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import insert
 
 from oraculoto.api.app import PREFIX, create_app
 from oraculoto.api.deps import get_engine
 from oraculoto.config import DbSettings, db_settings
 from oraculoto.db import make_engine
 from oraculoto.db.draws import save_draw
+from oraculoto.db.schema import sync_runs
 from oraculoto.importer.caixa_xlsx import import_xlsx, parse_file
 from tests.conftest import TEST_DB
 from tests.xlsx_builder import SAMPLE_ROWS, build_xlsx
@@ -55,7 +58,37 @@ def test_health_needs_no_token(client):
     assert data["database"] == "ok"
     [game] = data["games"]
     assert (game["game"], game["latest_contest"], game["latest_date"]) == ("megasena", 3, "1996-03-25")
-    assert game["last_sync"].endswith("Z")
+    # an xlsx import isn't a crawl: the home fetcher has never run
+    assert (game["last_crawl"], game["stale"]) == (None, True)
+
+
+@pytest.mark.parametrize(("age", "stale"), [(timedelta(hours=1), False), (timedelta(days=2, hours=1), True)])
+def test_health_reports_the_last_successful_crawl(sample, age, stale):
+    finished = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - age
+    with sample.begin() as conn:
+        conn.execute(
+            insert(sync_runs),
+            [
+                {
+                    "game_id": 1,
+                    "kind": "crawl",
+                    "status": "nothing_new",
+                    "started_at": finished,
+                    "finished_at": finished,
+                },
+                # later, but failed: doesn't count
+                {
+                    "game_id": 1,
+                    "kind": "crawl",
+                    "status": "error",
+                    "started_at": finished,
+                    "finished_at": finished + age,
+                },
+            ],
+        )
+    [game] = api_client(sample).get(f"{PREFIX}/health").json()["data"]["games"]
+    assert game["last_crawl"] == finished.isoformat() + "Z"
+    assert game["stale"] is stale
 
 
 def test_health_reports_a_dead_database():

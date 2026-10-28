@@ -8,7 +8,8 @@ start unless ORACULOTO_ENV=dev, so the stub can never guard a real deployment.
 import os
 from dataclasses import dataclass
 
-from fastapi import Header
+from fastapi import Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from oraculoto.api.envelope import ApiError
 
@@ -33,13 +34,12 @@ def check_auth_config() -> None:
         )
 
 
-def bearer_token(authorization: str | None) -> str | None:
-    scheme, _, token = (authorization or "").strip().partition(" ")
-    token = token.strip()
-    return token if scheme.lower() == "bearer" and token else None
+# Declared as a security scheme so the OpenAPI docs get an "Authorize" button. auto_error=False:
+# a missing or malformed header is our 401 envelope, not FastAPI's bare 403.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def require_user(authorization: str | None = Header(default=None, include_in_schema=False)) -> CurrentUser:
-    if bearer_token(authorization) is None:
+def require_user(credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme)) -> CurrentUser:
+    if credentials is None:
         raise ApiError(401, "unauthorized", "missing or malformed Authorization: Bearer <token> header")
     return DEV_USER

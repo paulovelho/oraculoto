@@ -72,7 +72,7 @@ No rate limits. Expensive endpoints still validate their input (backtest range, 
 
 | method + path | returns |
 |---|---|
-| `GET /health` (no token) | database status; latest contest and date per game; last successful sync (`sync_runs`) |
+| `GET /health` (no token) | database status; latest contest and date per game; last successful crawl (`sync_runs`) and whether it's stale |
 | `GET /me` | the current user; updates `last_login_at` |
 
 **Results**
@@ -113,7 +113,7 @@ As built:
 - **together:** `{ window, balls, jackpot, expected, last: { contest, date } | null, items: [{ contest, date }], page, limit, total }`. The list is always there, paginated with the §3 convention, newest first; `total` is the count. `expected` = contests considered × P(one draw holds all the balls), where "considered" is the whole window, or only the jackpot contests with `jackpot=true` (a baseline that assumes the balls don't affect whether somebody wins).
 - **pairs:** `size` 2 or 3, `top` 1–100 (default 20). `{ window, size, expected, items: [{ balls, times }] }`, ties by lower balls.
 - **gaps:** `{ window, expected_gap, items: [{ ball, last_seen, current_gap, longest_gap }] }`, longest current absence first. Within the window: `current_gap` counts up to the window's last contest; `longest_gap` counts runs between two appearances only, as in `docs/database.md` §6 (`null` with fewer than two). `expected_gap` = (1 − p) / p with p = balls_drawn / pool (9 for Mega-Sena).
-- **health:** `{ database: "ok", games: [{ game, latest_contest, latest_date, last_sync }] }`, `last_sync` being the latest `ok` or `nothing_new` run in `sync_runs`. If the database is unreachable: 503 `db_unavailable`, details only in the log.
+- **health:** `{ database: "ok", games: [{ game, latest_contest, latest_date, last_crawl, stale }] }`, `last_crawl` being the latest `ok` or `nothing_new` run of kind `crawl` in `sync_runs` (xlsx imports don't count), and `stale` true when there is none or it's more than 2 days old (`docs/crawler.md` §5). Renamed from `last_sync` on 2026-10-28. If the database is unreachable: 503 `db_unavailable`, details only in the log.
 
 **Guesses**
 
