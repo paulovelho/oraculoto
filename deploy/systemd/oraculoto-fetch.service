@@ -1,0 +1,22 @@
+# Home machine, user unit: one crawler run (docs/crawler.md §5, §7). Started by oraculoto-fetch.timer.
+#
+# Adjust the paths before installing:
+#   - WorkingDirectory / ExecStart: this checkout, synced with `uv sync --extra fetch`
+#   - `dh`: the ssh host alias for DreamHost (ssh-agent or an unencrypted key: nobody types a passphrase here)
+#   - --remote-cmd: oraculoto on the server; `~` is left for the remote shell to expand
+#
+# Install:
+#   cp deploy/systemd/oraculoto-fetch.* ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now oraculoto-fetch.timer
+#   loginctl enable-linger "$USER"     # optional: also run while logged out
+# Logs: journalctl --user -u oraculoto-fetch
+
+[Unit]
+Description=Oraculoto: fetch Caixa results at home, ingest them on the server
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Rincewind/oraculoto
+ExecStart=%h/Rincewind/oraculoto/.venv/bin/oraculoto fetch --remote dh --remote-cmd ~/oraculoto/.venv/bin/oraculoto --game megasena
+# a backfill runs by hand; a scheduled run is ~5 requests
+TimeoutStartSec=15min
