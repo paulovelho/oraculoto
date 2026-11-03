@@ -17,7 +17,7 @@ HINTS = {
     "dns": "the hostname doesn't resolve: check DB_HOST (DreamHost's is mysql.<your domain>); "
     "a hostname just created in the panel can take a while to exist",
     "tcp_refused": "the host answers but nothing listens on that port: check DB_PORT "
-    "(DreamHost uses 3306; .env.example's 3307 is the local Docker one), and that the MySQL "
+    "(DreamHost uses 3306; local Docker uses 3307), and that the MySQL "
     "hostname is attached to this database in the panel",
     "tcp_timeout": "no answer: a firewall drops it. From outside DreamHost, the database "
     "user needs this machine's IP under 'allowable hosts' in the panel",

@@ -6,3 +6,5 @@ logs/
 .pytest_cache/
 .ruff_cache/
 var/
+web/node_modules/
+web/dist/

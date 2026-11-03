@@ -1,6 +1,12 @@
 # Web — plan
 
-Status (2026-11-02): **planned, not started** (roadmap step 7). It's built against the production API, which is being deployed at the same time (roadmap step 6). Earlier notes from 2026-10-23 are folded in below.
+Status (2026-11-03): **in progress** (roadmap step 7). Code in `web/` for §6 steps 1–3 (step 1 without login, see §0); step 3 built and checked by hand against production through the dev proxy, **not deployed yet**. Previous status (2026-11-02): planned, not started. It's built against the production API, which is being deployed at the same time (roadmap step 6). Earlier notes from 2026-10-23 are folded in below.
+
+## 0. Scope change (2026-11-03)
+
+- **v1 is public and read-only.** Login, session states and tickets (§3, §6 steps 1's login part and 4) are **postponed**, not dropped. The API client is built so auth can be added later without a rewrite.
+- v1 pages: shell + `/health` badge, latest result + contest lookup, stats, backtests. Guesses stay blocked (§6.6).
+- Accepted: the API, the expensive backtest included, is open to anyone while `ORACULOTO_AUTH=none`.
 
 ## 1. Decisions (2026-11-02)
 
@@ -49,10 +55,9 @@ RewriteRule ^ index.html [L]
 ```
 
 - An unknown path outside `/api` now gets the app (which shows its own 404), not the JSON `not_found` envelope. Unknown paths under `/api` still reach FastAPI.
-- **Build output:** `vite build` writes to `web/dist/` (never straight into `public/`: `emptyOutDir` would delete `index.cgi` and `.htaccess`). Deploy copies it over:
-  `rsync -a --delete --exclude .htaccess --exclude index.cgi web/dist/ platypusweb@paulovelho.com:<project>/public/`
-  `--delete` only removes old hashed assets; the two excludes keep the API's entry points. Build at home, not on DreamHost (no Node needed there). `web/dist/` is not committed.
-- Permissions: suEXEC doesn't care about static files, but keep them `644` and folders `755`.
+- **Build output:** `vite build` writes to `web/dist/` (never straight into `public/`: `emptyOutDir` would delete `index.cgi` and `.htaccess`). Build at home, not on DreamHost (no Node there). `web/dist/` is not committed.
+- **Deploy:** `deploy/deploy-web.sh` (`--dry-run` to preview). It runs the tests and the build (type check included) under Node 22, then rsyncs `web/dist/` into the server's `public/` with `--delete`, excluding `.htaccess` and `index.cgi`. `--delete` only removes old hashed assets; the two excludes keep the API's entry points. Target (`DEPLOY_HOST`, `DEPLOY_PATH`) in `deploy/deploy.conf`: `platypusweb@paulovelho.com`, `~/oraculoto`. Both can be overridden from the environment.
+- Permissions: suEXEC doesn't care about static files; the deploy sets them `644` and folders `755` (`--chmod`).
 
 ## 3. Login
 
@@ -100,6 +105,16 @@ Each step ships to production before the next one starts.
 1. **Skeleton:** layout, router, login, the session states (§3), the API client, the `/health` freshness badge (latest contest, stale flag). This step proves the parts that have never run together on DreamHost: the new `.htaccess`, the `Authorization` header through Apache, and real Firebase tokens.
 2. **Latest result + contest lookup:** balls (in drawn order when `draw_order` isn't `null`), prize tiers, winner locations, rollover, next estimated prize. Lookup by number at `/contest/:n`; previous/next links.
 3. **Stats:** frequency (chart + `expected` line), gaps (table, current absence first), pairs/triples (top N + expected), "together" (pick 1–6 balls, `jackpot` toggle, paginated list). One window selector for all of them: whole history / last N / from–to.
+   - **Built (2026-11-03), not deployed.** `/stats` (`views/StatsView.vue`), with a header nav (Resultados / Estatísticas). Checked by hand at phone width with `?last=100&balls=10,53`: every block matches the API, no console errors. `vue-tsc`, `vite build` and `vitest` (82 tests) pass.
+   - **State in the URL:** `last` or `from`/`to` (the API's own window keys) plus `balls`, `jackpot=1`, `page`. Malformed values are dropped, never sent (`lib/statsQuery.ts`). A new window resets `page` to 1. A query-only change keeps the scroll position (`router.ts`).
+   - **Drafts, not live inputs:** the window form and the ball picker fetch only on "Aplicar" / "Consultar", since every change costs ~1.3 s per block.
+   - **Frequency band:** the exact binomial central range (n = window draws, p = balls_drawn / pool, 2.5% per tail), **not** expected ± 2σ: the normal approximation is wrong on short windows (expected ≈ 1 with `last=10`). The page also states how many balls fall outside and how many chance alone would leave outside (`lib/stats.ts`, `fairBand`). The SVG measures its container (ResizeObserver) so labels stay readable on phones.
+   - **Selection effect:** the pairs/triples block says that the top 20 of C(60,2) = 1,770 pairs (34,220 triples) always beats `expected` by chance alone. The gaps block says a "late" ball is not more likely.
+   - Gaps show 10 rows until asked. "Together" pages 20 contests at a time.
+   - `components/BallPicker.vue` is generic (`min`, `max`, `limit`) for step 4's ticket form.
+   - Stats responses go in the session cache keyed by their full URL (§4).
+   - Shared styles (`.block`, `.data-table`, `.btn`, `.input`, skeleton sizes) moved from `DrawDetails.vue` to `style.css`.
+   - Needs Node 22 (`web/.nvmrc`; run `nvm use`). Under Node 18, Vite 8 fails with a `styleText` import error.
 4. **My tickets:** list (paginated, newest first); create (a 1–60 ball picker with 6–20 numbers, contest range defaulting to the next contest, span capped by the API); results per contest (`drawn` / `pending` / `missing`, matched numbers, winning combinations, amounts, the `registered_after_draw` flag); rename; delete.
 5. **Backtests:** the form is built from `GET /functions` (each `params` entry gives type, default, min and max), plus `k` and the contest range. Results: hits histogram, tiers vs expected, baseline next to it (§5).
 6. **Guesses:** **blocked** until the `GET /games/{game}/guess` rules are defined (`docs/api.md` §4). "Save as ticket" (with `source` = the function's `ref`) comes with it.
