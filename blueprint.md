@@ -138,7 +138,7 @@ right now, your job will be only generate a plan.md file for each of the modules
   - FastAPI `/`: ~1.37 s; `/db` with a MySQL query: ~1.27 s. Imports 463 ms once bytecode is compiled (2,380 ms on the first, cold run), MySQL connect 36 ms, query 0.4 ms
   - So CGI costs ~0.7–0.8 s per request. Accepted for a low-traffic, invite-only app. Expect an occasional slow first request after long idle periods
   - `cgi-test/` was deleted on 2026-10-24, once its pieces moved into `public/` and `src/oraculoto/api/cgi.py`
-- **Module plans:** `docs/database.md`, `docs/crawler.md`, `docs/api.md`, `docs/web.md` (on hold).
+- **Module plans:** `docs/database.md`, `docs/crawler.md`, `docs/api.md`, `docs/web.md`.
 
 ## Roadmap (2026-10-23)
 
@@ -148,4 +148,5 @@ right now, your job will be only generate a plan.md file for each of the modules
 3. Guess functions + backtest, with the reference strategies as tests. **Done 2026-10-26** (local): `GET /functions`, `GET /games/{game}/backtest`, four deterministic reference strategies that reproduce `docs/api.md` §5. Contract changed to `guess(game, history, k, params)` (no `rng`, no `random` strategy). No backtest cache (measure first). `GET /guess` is deferred until its rules are defined.
 4. Live crawler (Caixa JSON endpoint) with its schedule, plus the optional backfill. **Done 2026-10-28** (local): `crawl-plan` / `fetch` / `ingest`, run end to end from home against the local MySQL with the real API; systemd units in `deploy/systemd/`, not installed. The server half can't run on DreamHost until something is deployed there. `/health` reports the last crawl and a stale flag. Backfill built, not run. Details: `docs/crawler.md`.
 5. Firebase auth, invite list, tickets. **Done 2026-10-28** (local): PyJWT token checks with Google's keys cached on disk, `GET /me`, `users` commands, tickets CRUD and results, migration 0004 (`tickets.source` nullable). The dev stub is replaced by a dev signing key (`ORACULOTO_AUTH=dev-key`, `oraculoto dev-token <email>`), so local work runs the real login path. The Firebase project doesn't exist yet: the firebase mode is tested only with fake keys. Details: `docs/api.md` §2, §4, §6, §10.
-
+6. Deploy to DreamHost (SSH `platypusweb@paulovelho.com`, code pulled 2026-11-02): migrations, data load, Firebase project, the home timer. **In progress.** First deploy runs with login off (`ORACULOTO_AUTH=none`, decided 2026-11-03): public routes only, no `/me` or tickets, until Firebase and the web login exist.
+7. Web, built against the production API and served from the same domain (no CORS). Plan: `docs/web.md` (2026-11-02).

@@ -26,6 +26,19 @@ def load_env(path: Path = PROJECT_ROOT / ".env") -> None:
         os.environ.setdefault(key.strip(), value)
 
 
+# Who signs login tokens. `none` turns login off: only the public routes are served (no /me, no
+# tickets). Temporary, until the Firebase project and the web login exist (decided 2026-11-03).
+AUTH_MODES = ("firebase", "dev-key", "none")
+
+
+def auth_mode() -> str:
+    """ORACULOTO_AUTH, checked. Lives here, not in api/auth.py, so `none` never imports PyJWT."""
+    mode = os.environ.get("ORACULOTO_AUTH") or "firebase"
+    if mode not in AUTH_MODES:
+        raise RuntimeError(f"ORACULOTO_AUTH={mode!r}: use one of {', '.join(AUTH_MODES)}")
+    return mode
+
+
 def var_dir() -> Path:
     """Files the app writes for itself (key caches, the dev signing key). Outside the web root."""
     return Path(os.environ.get("ORACULOTO_VAR_DIR") or PROJECT_ROOT / "var")

@@ -3,6 +3,8 @@
 The stats against the real file are in test_api_stats.py.
 """
 
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -135,6 +137,57 @@ def test_every_route_but_health_needs_a_token(sample, headers):
         r = client.request(method, path, params={"balls": "10"}, headers=headers, json={})
         assert r.status_code == 401, (method, path)
         assert r.json()["error"]["code"] == "unauthorized"
+
+
+PUBLIC_PATHS = [
+    "/games",
+    "/games/megasena/draws",
+    "/games/megasena/draws/by-date",
+    "/games/megasena/draws/latest",
+    "/games/megasena/draws/1",
+    "/games/megasena/stats/frequency",
+    "/games/megasena/stats/together?balls=10",
+    "/games/megasena/stats/pairs",
+    "/games/megasena/stats/gaps",
+    "/functions",
+    "/games/megasena/backtest?function=hot",
+]
+
+
+def test_auth_none_serves_the_public_routes_without_a_token(sample, monkeypatch):
+    monkeypatch.setenv("ORACULOTO_AUTH", "none")
+    monkeypatch.delenv("FIREBASE_PROJECT_ID", raising=False)
+    client = api_client(sample, None)
+    for path in PUBLIC_PATHS:
+        r = client.get(PREFIX + path)
+        assert r.status_code == 200, (path, r.text)
+    # A token, even a garbage one, is ignored rather than refused.
+    assert client.get(f"{PREFIX}/games", headers={"Authorization": "Bearer a.b.c"}).status_code == 200
+
+
+def test_auth_none_mounts_nothing_of_a_user(sample, monkeypatch):
+    monkeypatch.setenv("ORACULOTO_AUTH", "none")
+    client = api_client(sample, None)
+    user_routes = [("GET", "/me"), ("GET", "/me/tickets"), ("POST", "/me/tickets"), ("GET", "/me/tickets/1")]
+    for method, path in user_routes:
+        r = client.request(method, PREFIX + path, json={})
+        assert r.status_code == 404 and r.json()["error"]["code"] == "not_found", (method, path)
+    paths = create_app().openapi()["paths"]
+    assert not [p for p in paths if p.startswith(f"{PREFIX}/me")]
+    # Same public routes as with login on, minus /me and the tickets.
+    assert len(paths) - 1 == len(PUBLIC_PATHS)  # -1: /health
+
+
+def test_auth_none_doesnt_import_pyjwt():
+    # Under CGI every import is paid per request, so `none` must not load the token checks.
+    code = (
+        "import os, sys; os.environ['ORACULOTO_AUTH'] = 'none';"
+        "from oraculoto.api.app import create_app; create_app();"
+        "print(sorted(m for m in sys.modules if m == 'jwt' or m.startswith('oraculoto.auth')"
+        " or m == 'oraculoto.api.auth'))"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", out.stdout + out.stderr
 
 
 def test_dev_key_refuses_to_start_outside_dev(monkeypatch):

@@ -1,27 +1,118 @@
-# Web — plan (placeholder)
+# Web — plan
 
-Status (2026-10-23): **on hold until the API is settled**, as `blueprint.md` says. This page only records what's already known, so nothing gets lost in the meantime.
+Status (2026-11-02): **planned, not started** (roadmap step 7). It's built against the production API, which is being deployed at the same time (roadmap step 6). Earlier notes from 2026-10-23 are folded in below.
 
-## Known requirements
+## 1. Decisions (2026-11-02)
 
-- **Login:** Google sign-in through Firebase. The web app sends the Firebase ID token on every API call (`docs/api.md` §2).
-- **Invite-only:**
-  - A 403 `not_invited` shows a "you're not on the list" screen.
-  - A 403 `blocked` shows a blocked screen.
-  - There's no sign-up page; the admin invites people from the command line.
-- **Pages (draft):**
-  - **Latest result:** balls (and the order they were drawn, when known), prize tiers, rollover, the next estimated prize, and how fresh the data is (from `/health`).
-  - **Contest lookup:** find a contest by number.
-  - **Stats:** how often each ball is drawn (chart), "when were these balls last drawn together" (optionally only jackpot contests), top pairs and triples, and current and longest absences.
-  - **My tickets:** pick 6–20 numbers and a contest range; see the list; see results per contest with winning combinations and estimated prize, plus pending contests.
-  - **Guesses and backtests:** pick a function and its parameters, get numbers, and optionally save them as a ticket (with `source` set to the function).
+- **Stack:** Vue 3 + Vite + TypeScript (decided 2026-10-23, same as Dunedin), `vue-router` in history mode, the modular Firebase JS SDK (`firebase/app` + `firebase/auth` only).
+- **Same domain as the API:** the app is served from `oraculoto.platypusweb.com.br` at `/`, the API stays at `/api/v1`. The browser sees one origin, so **no CORS**, now or later (closes the open point in `docs/api.md` §10).
+- **Local development runs against production only.** No local API, no dev key in the browser. Consequences, accepted:
+  - Every ticket created while testing is a real row in the production `tickets` table, under a real account. Clean up with `DELETE /me/tickets/{id}` (or by hand).
+  - Every call costs ~1.3 s (CGI), in development too.
+  - The Firebase project must exist before the first line of frontend code (§3).
+- **Code lives in this repo,** in `web/`, next to `src/`. One repo, one `git pull`.
+
+## 2. Hosting
+
+`public/` is the domain's web root. Today everything that isn't a real file goes to `index.cgi`. It changes to:
+
+- `/api/*` → `index.cgi` (as now; `oraculoto.api.cgi` rebuilds `PATH_INFO` from `REQUEST_URI`, so nothing changes in Python)
+- a real file (`index.html`, `assets/…`, favicon) → served by Apache
+- anything else → `index.html` (history-mode routes like `/tickets/12`)
+
+Draft of the new `public/.htaccess`:
+
+```apache
+Options +ExecCGI -Indexes
+AddHandler cgi-script .cgi
+DirectoryIndex index.html
+
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Real files as they are (this also stops the second pass after the rewrites below).
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+RewriteRule ^api/ index.cgi [L]
+RewriteRule ^ index.html [L]
+
+# Hashed assets never change; index.html must always be revalidated.
+<IfModule mod_headers.c>
+  <FilesMatch "^index\.html$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <If "%{REQUEST_URI} =~ m#^/assets/#">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>
+```
+
+- An unknown path outside `/api` now gets the app (which shows its own 404), not the JSON `not_found` envelope. Unknown paths under `/api` still reach FastAPI.
+- **Build output:** `vite build` writes to `web/dist/` (never straight into `public/`: `emptyOutDir` would delete `index.cgi` and `.htaccess`). Deploy copies it over:
+  `rsync -a --delete --exclude .htaccess --exclude index.cgi web/dist/ platypusweb@paulovelho.com:<project>/public/`
+  `--delete` only removes old hashed assets; the two excludes keep the API's entry points. Build at home, not on DreamHost (no Node needed there). `web/dist/` is not committed.
+- Permissions: suEXEC doesn't care about static files, but keep them `644` and folders `755`.
+
+## 3. Login
+
+- **Before coding:** create the Firebase project, enable only the Google provider, add `oraculoto.platypusweb.com.br` to the authorized domains (`localhost` is there by default), and set `FIREBASE_PROJECT_ID` in the server's `.env`.
+- The Firebase web config (`apiKey`, `authDomain`, `projectId`, `appId`) is public by design. It goes in `web/.env` as `VITE_FIREBASE_*`, with a `web/.env.example` committed.
+- `signInWithPopup` with `GoogleAuthProvider`. Not the redirect flow: it relies on third-party storage that browsers now partition, unless `authDomain` is our own domain, which is setup we don't need.
+- **Session states**, driven by `onAuthStateChanged` + one `GET /me`:
+  - `loading` → spinner
+  - `signed-out` → login screen
+  - `not-invited` (403 `not_invited`) → "you're not on the list", with a sign-out button. There's no sign-up page; the admin invites from the command line.
+  - `blocked` (403 `blocked`) → blocked screen
+  - `ready` → the app
+- **API client** (one small module, no axios):
+  - Adds `Authorization: Bearer ${await user.getIdToken()}` to every call (the SDK caches it and refreshes it before the 1-hour expiry).
+  - Unwraps the envelope: returns `data`, or throws an `ApiError { status, code, message }`.
+  - On 401: `getIdToken(true)` and retry once; a second 401 signs out.
+  - On 403 `not_invited` / `blocked`: switch the session state, whatever page is open.
+  - Relative URLs (`/api/v1/...`) only, so the same build works behind the dev proxy and in production.
+- **Dev proxy** (`vite.config.ts`): `server.proxy['/api'] = { target: 'https://oraculoto.platypusweb.com.br', changeOrigin: true }`. The `Authorization` header passes through unchanged.
+
+## 4. Slow API, honest UI
+
+Each call is ~1.3 s and nothing is cached server-side, so:
+- Skeletons on every data block; never a blank page.
+- Fire a page's calls in parallel, never one after another.
+- An in-memory cache for the session, keyed by the latest contest from `/health`: `/games`, `/functions`, any `draws/{contest}`, and the stats responses. They only change when a new contest arrives. Tickets are never cached.
+- No `localStorage` cache in v1. Add it only if it turns out to be painful.
+
+## 5. Formatting and honesty
+
+- **pt-BR only**, no i18n library.
+- **Money** arrives as a string (`"38295.72"`). Format it by splitting the string (`R$ 38.295,72`), never through `parseFloat`. Totals that need adding up come from the API.
+- **Dates** arrive as `YYYY-MM-DD`. Show them as `dd/mm/yyyy` by splitting the string, never through `new Date()` (UTC midnight is the previous day in Brasília).
 - **Honesty rule:**
   - Every guess is shown with its real odds (1 in 50,063,860 for 6 numbers).
-  - Every backtest is shown next to the random baseline from the API.
+  - Every backtest is shown next to the random baseline from the API, including the `z_score`.
   - Nothing is ever labelled a "prediction" without that baseline next to it.
-- **Formatting:** pt-BR. Money as R$ 1.234,56 (the API sends strings; never parse them into floats). Dates as dd/mm/yyyy.
+- **Charts:** the frequency chart is 60 bars. Hand-written SVG, no chart library.
+- No UI kit. Plain CSS with a few variables; the app has five pages.
 
-## Open (decide when this module starts)
+## 6. Pages, in build order
 
-- **Stack:** Vue 3 + Vite + TypeScript (decided 2026-10-23, same as Dunedin).
-- **Hosting:** serving the web app from the same domain as the API means no CORS at all (`docs/api.md` §2).
+Each step ships to production before the next one starts.
+
+1. **Skeleton:** layout, router, login, the session states (§3), the API client, the `/health` freshness badge (latest contest, stale flag). This step proves the parts that have never run together on DreamHost: the new `.htaccess`, the `Authorization` header through Apache, and real Firebase tokens.
+2. **Latest result + contest lookup:** balls (in drawn order when `draw_order` isn't `null`), prize tiers, winner locations, rollover, next estimated prize. Lookup by number at `/contest/:n`; previous/next links.
+3. **Stats:** frequency (chart + `expected` line), gaps (table, current absence first), pairs/triples (top N + expected), "together" (pick 1–6 balls, `jackpot` toggle, paginated list). One window selector for all of them: whole history / last N / from–to.
+4. **My tickets:** list (paginated, newest first); create (a 1–60 ball picker with 6–20 numbers, contest range defaulting to the next contest, span capped by the API); results per contest (`drawn` / `pending` / `missing`, matched numbers, winning combinations, amounts, the `registered_after_draw` flag); rename; delete.
+5. **Backtests:** the form is built from `GET /functions` (each `params` entry gives type, default, min and max), plus `k` and the contest range. Results: hits histogram, tiers vs expected, baseline next to it (§5).
+6. **Guesses:** **blocked** until the `GET /games/{game}/guess` rules are defined (`docs/api.md` §4). "Save as ticket" (with `source` = the function's `ref`) comes with it.
+
+## 7. Tests
+
+- `vue-tsc --noEmit` and `vitest`, no end-to-end suite in v1.
+- Unit tests where bugs would be silent: the money and date formatters, the API client (envelope, 401 retry, 403 switch), the ticket form's validation.
+- Pages are checked by hand against production. No tests hit the real API.
+
+## 8. Not in v1
+
+- A local-API mode (decided 2026-11-02: production only).
+- Offline support, `localStorage` cache, PWA.
+- Admin screens (the API has no admin endpoints; §7 of `docs/api.md`).
+- Notifications.

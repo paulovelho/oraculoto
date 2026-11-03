@@ -76,6 +76,13 @@ def test_no_token(sample, tmp_path):
     assert status == 401 and body["error"]["code"] == "unauthorized"
 
 
+def test_auth_none_through_cgi(sample, tmp_path):
+    status, _, body = run_cgi("/api/v1/games/megasena/draws/latest", tmp_path, ORACULOTO_AUTH="none")
+    assert status == 200 and body["data"]["contest"] == 3
+    status, _, body = run_cgi("/api/v1/me", tmp_path, ORACULOTO_AUTH="none")
+    assert status == 404 and body["error"]["code"] == "not_found"
+
+
 def test_crash_goes_to_the_log_not_the_client(tmp_path):
     status, _, body = run_cgi("/api/v1/health", tmp_path, ORACULOTO_ENV="production")
     assert status == 500

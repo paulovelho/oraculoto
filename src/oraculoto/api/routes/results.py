@@ -6,14 +6,13 @@ from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from oraculoto.api.auth import require_user
 from oraculoto.api.deps import Paging, get_conn, get_game, paging
 from oraculoto.api.envelope import ApiError, day, money, ok, page_of
 from oraculoto.db.draws import Game
 from oraculoto.db.results import DrawFilter, DrawRecord, get_draw, latest_draw, list_draws
 from oraculoto.db.schema import games
 
-router = APIRouter(tags=["results"], dependencies=[Depends(require_user)])
+router = APIRouter(tags=["results"])
 
 
 def game_json(game: Game) -> dict:

@@ -4,6 +4,8 @@ ORACULOTO_AUTH picks who signs the tokens:
 - `firebase` (the default): Google, for the project in FIREBASE_PROJECT_ID.
 - `dev-key`: a local key (`oraculoto dev-token <email>` signs with it). Everything after the
   signature is the real code path. Only runs with ORACULOTO_ENV=dev.
+- `none`: login is off. create_app() doesn't import this module at all, serves the results,
+  stats and guesses routes to anyone, and doesn't mount /me or the tickets.
 """
 
 import logging
@@ -18,12 +20,10 @@ from oraculoto.api.deps import get_conn
 from oraculoto.api.envelope import ApiError
 from oraculoto.auth.keys import DEV_PROJECT_ID, DevKey, GoogleKeys, KeysUnavailable
 from oraculoto.auth.tokens import Claims, KeySource, TokenError, TokenRefused, verify_token
-from oraculoto.config import var_dir
+from oraculoto.config import auth_mode, var_dir
 from oraculoto.db.users import LoginRefused, User, login
 
 log = logging.getLogger(__name__)
-
-AUTH_MODES = ("firebase", "dev-key")
 
 
 @dataclass(frozen=True)
@@ -34,9 +34,10 @@ class AuthConfig:
 
 def auth_config() -> AuthConfig:
     """Read on every request (cheap); create_app() calls it first so a bad setup fails at startup."""
-    mode = os.environ.get("ORACULOTO_AUTH") or "firebase"
-    if mode not in AUTH_MODES:
-        raise RuntimeError(f"ORACULOTO_AUTH={mode!r}: use one of {', '.join(AUTH_MODES)}")
+    mode = auth_mode()
+    if mode == "none":
+        # create_app() mounts no route that needs a user in this mode, so reaching here is a bug.
+        raise RuntimeError("ORACULOTO_AUTH=none: login is off, nothing should check tokens")
     if mode == "dev-key":
         env = os.environ.get("ORACULOTO_ENV", "")
         if env != "dev":

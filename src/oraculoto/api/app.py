@@ -1,20 +1,18 @@
 """The FastAPI app. Built per process: per request under CGI, once under uvicorn."""
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
-from oraculoto.config import load_env
+from oraculoto.config import auth_mode, load_env
 
 PREFIX = "/api/v1"
 
 
 def create_app() -> FastAPI:
     load_env()
-    from oraculoto.api.auth import auth_config
-
-    auth_config()
+    mode = auth_mode()
 
     from oraculoto.api.envelope import install_handlers
-    from oraculoto.api.routes import guesses, me, results, service, stats
+    from oraculoto.api.routes import guesses, results, service, stats
 
     app = FastAPI(
         title="Oraculoto",
@@ -24,6 +22,20 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
     install_handlers(app)
-    for module in (service, me, results, stats, guesses):
-        app.include_router(module.router, prefix=PREFIX)
+    app.include_router(service.router, prefix=PREFIX)
+
+    if mode == "none":
+        # Login off: the public routes for anyone, and nothing that belongs to a user. Not even
+        # PyJWT gets imported, which CGI pays for on every request.
+        for module in (results, stats, guesses):
+            app.include_router(module.router, prefix=PREFIX)
+        return app
+
+    from oraculoto.api.auth import auth_config, require_user
+    from oraculoto.api.routes import me
+
+    auth_config()  # a bad setup fails here, at startup, not on the first request
+    app.include_router(me.router, prefix=PREFIX)
+    for module in (results, stats, guesses):
+        app.include_router(module.router, prefix=PREFIX, dependencies=[Depends(require_user)])
     return app

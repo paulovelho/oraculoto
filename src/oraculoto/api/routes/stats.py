@@ -8,13 +8,12 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from oraculoto.api.auth import require_user
 from oraculoto.api.deps import Paging, WindowParams, get_conn, get_game, paging, window_params
 from oraculoto.api.envelope import ApiError, day, ok, page_of
 from oraculoto.db import stats
 from oraculoto.db.draws import Game
 
-router = APIRouter(prefix="/games/{game}/stats", tags=["stats"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/games/{game}/stats", tags=["stats"])
 
 
 def _window(conn: Connection, game: Game, wp: WindowParams) -> stats.Window:

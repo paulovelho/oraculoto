@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from oraculoto.api.auth import require_user
 from oraculoto.api.deps import get_conn, get_game
 from oraculoto.api.envelope import ApiError, ok
 from oraculoto.api.routes.stats import window_json
@@ -18,7 +17,7 @@ from oraculoto.db.results import load_history
 from oraculoto.guess import REGISTRY, GuessFunction
 from oraculoto.guess.backtest import BacktestResult, backtest, expected_hits
 
-router = APIRouter(tags=["guesses"], dependencies=[Depends(require_user)])
+router = APIRouter(tags=["guesses"])
 
 # Query parameters of /backtest itself; anything else is a parameter of the function.
 BACKTEST_QUERY = {"function", "k", "from", "to"}
