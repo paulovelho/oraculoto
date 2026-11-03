@@ -10,6 +10,7 @@ from sqlalchemy import Connection, func, select
 from oraculoto.api.auth import Login, authenticate, require_user
 from oraculoto.api.deps import Paging, get_conn, paging
 from oraculoto.api.envelope import ApiError, day, money, ok, page_of, utc_timestamp
+from oraculoto.api.routes.bets import prizes_json
 from oraculoto.config import ticket_max_span
 from oraculoto.db import tickets as db
 from oraculoto.db.draws import Game
@@ -191,15 +192,7 @@ def ticket_results(
             date=day(d.draw_date),
             hits=s.hits,
             matched=list(s.matched),
-            prizes=[
-                {
-                    "hits": w.hits,
-                    "combinations": w.combinations,
-                    "prize_per_winner": money(w.prize_per_winner),
-                    "amount": money(w.amount),
-                }
-                for w in s.wins
-            ],
+            prizes=prizes_json(s),
             total=money(s.total),
             # Conservative: created_at is UTC and the draw is in the Brazilian evening, so a ticket
             # saved earlier on the draw day is flagged too.

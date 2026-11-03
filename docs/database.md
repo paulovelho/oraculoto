@@ -201,6 +201,27 @@ Index (`game_id`, `first_contest`, `last_contest`). Numbers and contests can't c
 
 Primary key (`ticket_id`, `ball`). The API checks the count (6–20 for Mega-Sena) and the range against `games`.
 
+### `oraculoto_bets`: oraculoto's own bet, one per contest
+
+Added by migration 0005 (decided 2026-11-03; rules in `docs/api.md` §11).
+
+| column | type | null | notes |
+|---|---|---|---|
+| `id` | bigint, PK | no | |
+| `game_id` | FK → `games` | no | |
+| `contest_number` | int | no | check ≥ 1; unique with `game_id`: one bet per contest |
+| `source` | varchar(64) | no | the function that picked the numbers (e.g. `guess_oraculoto@1`) |
+| `created_at` | timestamp | no | when the bet was placed; always before bets closed. No `updated_at`: a bet never changes |
+
+### `oraculoto_bet_numbers`
+
+| column | type | null | notes |
+|---|---|---|---|
+| `bet_id` | FK → `oraculoto_bets`, delete cascades | no | |
+| `ball` | smallint | no | check 0–99 |
+
+Primary key (`bet_id`, `ball`). The `bet` command checks the count and range against `games`.
+
 ### `sync_runs`: log of imports and crawls
 
 | column | type | null | notes |

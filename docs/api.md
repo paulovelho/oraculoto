@@ -8,6 +8,8 @@ Status (2026-10-26): **guess functions and backtests built** (roadmap step 3, lo
 
 Status (2026-11-03): **login can be switched off** for the first deploy (`ORACULOTO_AUTH=none`), until the Firebase project and the web login exist. In that mode results, stats, `/functions` and `/backtest` are public, and `/me` and the tickets aren't mounted (404, and absent from the OpenAPI docs). PyJWT isn't even imported. This suspends §1's "token on every endpoint" and §2's invite-only rule while it's on, with no rate limits and the backtest open to anyone (§5's 500-contest cap is the only brake). Tests: the `auth_none` tests in `tests/test_api.py` and `tests/test_cgi.py`.
 
+Status (2026-11-03): **oraculoto's own bet built** (local only): migration 0005, the `bet` command and `GET /games/{game}/oraculoto[/{contest}]` (§4, §11), with a placeholder `guess_oraculoto`. Code: `src/oraculoto/bets.py` (rules), `src/oraculoto/db/bets.py`, `src/oraculoto/guess/oraculoto.py`, `src/oraculoto/api/routes/bets.py`. Tests: `tests/test_bets.py`.
+
 Local development: `uv run uvicorn oraculoto.api.app:create_app --factory --reload`, then `http://127.0.0.1:8000/api/v1/docs`.
 
 ## 1. Scope
@@ -132,6 +134,13 @@ As built:
 - **backtest:** `function` is required (unknown → 400). `k` defaults to `bet_min_numbers` and must be within the game's bet sizes. `from`/`to` are target contests; `to` defaults to the latest, `from` to the last 100 contests up to `to`. Every other query parameter goes to the function: undeclared, invalid or repeated → 400.
 - Response: `{ function: { key, version, ref }, params, k, window: { from, to, draws }, average_hits, hits: [{ hits, draws }], tiers: [{ hits, draws, expected }], baseline: { average_hits, standard_error, z_score } }`. `hits` runs from 0 to min(k, balls_drawn). A tier counts the draws where the guess held at least one winning combination of it (§6), so with k = 6 a 5-hit draw counts for tier 5 only. Floats have 4 significant digits; `z_score` = (average − baseline) / standard error. An empty window gives 0 draws and `null`s, not an error.
 
+**Oraculoto** (its own bets, §11; public like the results)
+
+| method + path | returns |
+|---|---|
+| `GET /games/{game}/oraculoto?page=&limit=` | oraculoto's bets, newest contest first, each with its result |
+| `GET /games/{game}/oraculoto/{contest}` | its bet on one contest; 404 if it has none |
+
 **Tickets** (only the caller's own)
 
 | method + path | returns |
@@ -251,7 +260,7 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 
 - Rate limits (decided).
 - Signing up yourself (never: invite only).
-- Storing function guesses (decided; backtests replace them).
+- Storing function guesses (decided; backtests replace them). Oraculoto's own bet is the one exception (§11).
 - Notifications ("your ticket won"). Later, the crawler could send them after each draw.
 
 ## 10. Stack and deployment (decided 2026-10-23)
@@ -278,3 +287,17 @@ There are no admin HTTP endpoints in v1, which means less to attack.
   - CPU limits: hence the backtest range cap (§5) and the cache.
   - **Deploy:** `mysqldump` (if migrating), `git pull`, `uv sync --compile-bytecode`, `alembic upgrade head`. No restart needed: every request starts fresh.
 - **Web app on the same domain** (decided 2026-11-02): served from `oraculoto.platypusweb.com.br` at `/`, so no CORS. `public/.htaccess` changes to route only `/api/*` to `index.cgi` (`docs/web.md` §2).
+
+## 11. Oraculoto's own bet (decided 2026-11-03)
+
+Oraculoto bets on every contest, as if it played itself: **one bet per contest**, made by its own function, `guess_oraculoto`. This is the one guess that is stored. It's a bet placed before the draw, not a function output to rebuild later, so its record can't be rewritten by changing the code afterwards.
+
+- **Function:** `guess_oraculoto` (`src/oraculoto/guess/oraculoto.py`) keeps the §5 contract. Its randomness depends on the contest: the generator is seeded with the game and the target contest, so the same contest always gives the same numbers. It's not in the registry: not in `/functions`, not backtestable through the API, not a ticket `source`. The current version is a placeholder (random numbers); the real one is still to be designed.
+- **Placing it:** `oraculoto bet [--game megasena] [--k N]`, run on the server (by a bot or after `ingest`). The target is the contest after the latest one stored, and the function gets the history up to it.
+  - `k` defaults to the game's minimum bet (6); more numbers only with `--k`.
+  - Allowed only until bets close: 19:00 Brasília on the target's draw date, which comes from the latest contest's `dataProximoConcurso`. If the crawler fell behind and that time has passed, the contest is **missed**: no bet, never a late one. A latest contest without an announced date (xlsx rows) → no bet.
+  - Running it again for the same contest changes nothing and answers `already_placed` with the stored bet (exit 0), so a bot can call it freely. A different `--k` on a contest that already has a bet → error (exit 1).
+  - Output: `placed: megasena #3073: 04 11 23 35 47 58 (guess_oraculoto@1); bets close 2026-10-22 19:00 Brasília`. Errors go to stderr with exit 1, nothing written.
+- **Never changes:** no update or delete, in the code or the API; the unique key (`game_id`, `contest_number`) holds one bet per contest.
+- **Results:** scored like a ticket (§6). An item is `{ contest, numbers, source, created_at, status, date, hits, matched, prizes, total }`, `status` being `pending`, `drawn` or `missing`, with `null`s and no prizes unless `drawn`.
+- **Not in v1:** what the bets cost (needs a ticket-price table with its history), and totals across bets.

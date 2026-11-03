@@ -35,6 +35,8 @@ DATA_TABLES = [
     "draw_balls",
     "draws",
     "sync_runs",
+    "oraculoto_bet_numbers",
+    "oraculoto_bets",
     "ticket_numbers",
     "tickets",
     "users",

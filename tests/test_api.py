@@ -132,7 +132,7 @@ def protected_routes() -> list[tuple[str, str]]:
 def test_every_route_but_health_needs_a_token(sample, headers):
     client = api_client(sample, None)
     routes = protected_routes()
-    assert len(routes) == 18
+    assert len(routes) == 20
     for method, path in routes:
         r = client.request(method, path, params={"balls": "10"}, headers=headers, json={})
         assert r.status_code == 401, (method, path)
@@ -151,7 +151,10 @@ PUBLIC_PATHS = [
     "/games/megasena/stats/gaps",
     "/functions",
     "/games/megasena/backtest?function=hot",
+    "/games/megasena/oraculoto",
 ]
+# Public too, but 404 on the sample data (oraculoto has no bets there).
+PUBLIC_NOT_FOUND = ["/games/megasena/oraculoto/1"]
 
 
 def test_auth_none_serves_the_public_routes_without_a_token(sample, monkeypatch):
@@ -161,6 +164,9 @@ def test_auth_none_serves_the_public_routes_without_a_token(sample, monkeypatch)
     for path in PUBLIC_PATHS:
         r = client.get(PREFIX + path)
         assert r.status_code == 200, (path, r.text)
+    for path in PUBLIC_NOT_FOUND:
+        r = client.get(PREFIX + path)
+        assert r.status_code == 404 and r.json()["error"]["code"] == "not_found", (path, r.text)
     # A token, even a garbage one, is ignored rather than refused.
     assert client.get(f"{PREFIX}/games", headers={"Authorization": "Bearer a.b.c"}).status_code == 200
 
@@ -175,7 +181,7 @@ def test_auth_none_mounts_nothing_of_a_user(sample, monkeypatch):
     paths = create_app().openapi()["paths"]
     assert not [p for p in paths if p.startswith(f"{PREFIX}/me")]
     # Same public routes as with login on, minus /me and the tickets.
-    assert len(paths) - 1 == len(PUBLIC_PATHS)  # -1: /health
+    assert len(paths) - 1 == len(PUBLIC_PATHS) + len(PUBLIC_NOT_FOUND)  # -1: /health
 
 
 def test_auth_none_doesnt_import_pyjwt():

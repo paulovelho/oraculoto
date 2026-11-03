@@ -120,6 +120,7 @@ right now, your job will be only generate a plan.md file for each of the modules
 - **What gets stored:**
   - Users' tickets are stored and checked against results automatically.
   - Function guesses are not stored. Functions are judged by backtests run on demand, always next to a random baseline.
+  - The one exception (decided 2026-11-03): oraculoto's own bet, one per contest, from its own function `guess_oraculoto`, as if it played itself. It's stored before the draw and never changed (`docs/api.md` §11).
 - **Deployment and stack:**
   - Deployment (decided 2026-10-23): **DreamHost shared hosting** for the API and the database. It's a low-traffic project, and nobody wants to maintain a VPS for it. The crawler's fetcher runs on the home machine (see above). Docker is for local development only.
   - Stack (decided 2026-10-23):

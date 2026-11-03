@@ -273,8 +273,9 @@ def test_crawl_plan_fetch_ingest_pipe(clean_db, megasena, monkeypatch, capsys):
 
     monkeypatch.setattr("sys.stdin", io.StringIO(fetched))
     assert cli.main(["ingest"]) == 0
-    assert capsys.readouterr().out.startswith(
-        "ok: megasena crawl: 5 responses; inserted 3, updated 0, unchanged 1"
+    assert capsys.readouterr().out == (
+        "ok: megasena crawl: 5 responses; inserted 3 (#3069-#3070, #3072), updated 0, "
+        "unchanged 1 (#3071); #3073 not drawn yet\n"
     )
     assert stored(clean_db) == {n: "api" for n in (3069, 3070, 3071, 3072)}  # the refresh fills holes too
 

@@ -9,7 +9,7 @@ that dies leaves a trace.
 
 import json
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -30,12 +30,25 @@ class IngestReport:
     game: str
     kind: str = "crawl"
     responses: int = 0
-    inserted: int = 0
-    updated: int = 0
-    unchanged: int = 0
+    # contest numbers per save_draw() result, in the order they were saved
+    saved: dict[str, list[int]] = field(
+        default_factory=lambda: {"inserted": [], "updated": [], "unchanged": []}
+    )
     not_drawn: int | None = None  # the contest that closed the gap
     cap_reached: bool = False
     problem: str | None = None
+
+    @property
+    def inserted(self) -> int:
+        return len(self.saved["inserted"])
+
+    @property
+    def updated(self) -> int:
+        return len(self.saved["updated"])
+
+    @property
+    def unchanged(self) -> int:
+        return len(self.saved["unchanged"])
 
     @property
     def draws_written(self) -> int:
@@ -48,10 +61,11 @@ class IngestReport:
         return "ok" if self.draws_written else "nothing_new"
 
     def summary(self) -> str:
-        parts = [
-            f"{self.game} {self.kind}: {self.responses} responses; inserted {self.inserted}, "
-            f"updated {self.updated}, unchanged {self.unchanged}"
-        ]
+        counts = ", ".join(
+            f"{result} {len(numbers)}" + (f" ({_ranges(numbers)})" if numbers else "")
+            for result, numbers in self.saved.items()
+        )
+        parts = [f"{self.game} {self.kind}: {self.responses} responses; {counts}"]
         if self.not_drawn is not None:
             parts.append(f"#{self.not_drawn} not drawn yet")
         if self.cap_reached:
@@ -59,6 +73,17 @@ class IngestReport:
         if self.problem:
             parts.append(self.problem)
         return "; ".join(parts)
+
+
+def _ranges(numbers: list[int]) -> str:
+    """[3070, 3071, 3072, 3075] -> "#3070-#3072, #3075"."""
+    runs: list[list[int]] = []
+    for n in sorted(numbers):
+        if runs and n == runs[-1][1] + 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    return ", ".join(f"#{a}" if a == b else f"#{a}-#{b}" for a, b in runs)
 
 
 def _now() -> datetime:
@@ -125,7 +150,7 @@ def _save(engine: Engine, game: Game, plan: Plan, lines, report: IngestReport) -
             draw = parse_draw(game, line["body"], contest)
             with engine.begin() as conn:
                 result = save_draw(conn, game, draw)
-            setattr(report, result, getattr(report, result) + 1)
+            report.saved[result].append(contest)
             if contest in gap and contest == gap[-1]:
                 report.cap_reached = True
         elif kind == "not_drawn" and contest in gap:

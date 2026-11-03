@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
     mode = auth_mode()
 
     from oraculoto.api.envelope import install_handlers
-    from oraculoto.api.routes import guesses, results, service, stats
+    from oraculoto.api.routes import bets, guesses, results, service, stats
 
     app = FastAPI(
         title="Oraculoto",
@@ -27,7 +27,7 @@ def create_app() -> FastAPI:
     if mode == "none":
         # Login off: the public routes for anyone, and nothing that belongs to a user. Not even
         # PyJWT gets imported, which CGI pays for on every request.
-        for module in (results, stats, guesses):
+        for module in (results, stats, guesses, bets):
             app.include_router(module.router, prefix=PREFIX)
         return app
 
@@ -36,6 +36,6 @@ def create_app() -> FastAPI:
 
     auth_config()  # a bad setup fails here, at startup, not on the first request
     app.include_router(me.router, prefix=PREFIX)
-    for module in (results, stats, guesses):
+    for module in (results, stats, guesses, bets):
         app.include_router(module.router, prefix=PREFIX, dependencies=[Depends(require_user)])
     return app

@@ -154,6 +154,29 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 1 if report.problem else 0
 
 
+def cmd_bet(args: argparse.Namespace) -> int:
+    from oraculoto.bets import BetError, place_bet
+    from oraculoto.db import make_engine
+    from oraculoto.db.draws import get_game
+
+    engine = make_engine()
+    try:
+        with engine.connect() as conn:
+            outcome = place_bet(conn, get_game(conn, args.game), args.k)
+    except (BetError, LookupError) as e:
+        print(f"bet failed, nothing written: {e}", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+    bet = outcome.bet
+    numbers = " ".join(f"{n:02d}" for n in bet.numbers)
+    line = f"{outcome.result}: {args.game} #{bet.contest}: {numbers} ({bet.source})"
+    if outcome.closes_at:
+        line += f"; bets close {outcome.closes_at:%Y-%m-%d %H:%M} Brasília"
+    print(line)
+    return 0
+
+
 def cmd_users(args: argparse.Namespace) -> int:
     from oraculoto.db import make_engine
     from oraculoto.db import users as db
@@ -238,6 +261,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="server: save the fetcher's lines (stdin) through save_draw()")
     p.add_argument("--game", default="megasena", help="game slug (default: megasena)")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("bet", help="server: oraculoto bets on the next contest (once; never changed)")
+    p.add_argument("--game", default="megasena", help="game slug (default: megasena)")
+    p.add_argument("--k", type=int, help="how many numbers (default: the minimum bet, 6 for Mega-Sena)")
+    p.set_defaults(func=cmd_bet)
 
     p = sub.add_parser("users", help="the invite list: invite, block, unblock, list")
     users_sub = p.add_subparsers(dest="action", required=True)

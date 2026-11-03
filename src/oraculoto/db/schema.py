@@ -181,6 +181,29 @@ ticket_numbers = Table(
     **TABLE_ARGS,
 )
 
+oraculoto_bets = Table(
+    "oraculoto_bets",
+    metadata,
+    Column("id", ID, primary_key=True, autoincrement=True),
+    Column("game_id", Integer, ForeignKey("games.id"), nullable=False),
+    Column("contest_number", Integer, nullable=False),
+    Column("source", String(64), nullable=False),  # the function that picked the numbers (key@version)
+    Column("created_at", DateTime, nullable=False, server_default=NOW),  # no updated_at: never changes
+    UniqueConstraint("game_id", "contest_number"),
+    CheckConstraint("contest_number >= 1", name="contest_number"),
+    **TABLE_ARGS,
+)
+
+oraculoto_bet_numbers = Table(
+    "oraculoto_bet_numbers",
+    metadata,
+    Column("bet_id", ID, ForeignKey("oraculoto_bets.id", ondelete="CASCADE"), nullable=False),
+    Column("ball", SmallInteger, nullable=False),
+    PrimaryKeyConstraint("bet_id", "ball"),
+    CheckConstraint("ball BETWEEN 0 AND 99", name="ball"),
+    **TABLE_ARGS,
+)
+
 sync_runs = Table(
     "sync_runs",
     metadata,
