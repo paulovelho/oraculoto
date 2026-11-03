@@ -179,6 +179,12 @@ def cmd_users(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_db_check(args: argparse.Namespace) -> int:
+    from oraculoto.db.check import run
+
+    return run()
+
+
 def cmd_dev_token(args: argparse.Namespace) -> int:
     from oraculoto.auth.keys import DevKey
     from oraculoto.config import load_env, var_dir
@@ -246,6 +252,11 @@ def build_parser() -> argparse.ArgumentParser:
             a.add_argument("--admin", action="store_true", help="role admin (no extra powers in v1)")
     users_sub.add_parser("list", help="every invited user")
     p.set_defaults(func=cmd_users)
+
+    p = sub.add_parser(
+        "db-check", help="test the database settings: DNS, TCP port, login, schema (first FAIL = the cause)"
+    )
+    p.set_defaults(func=cmd_db_check)
 
     p = sub.add_parser(
         "dev-token", help="dev: print a token signed by the local dev key (API with ORACULOTO_AUTH=dev-key)"
