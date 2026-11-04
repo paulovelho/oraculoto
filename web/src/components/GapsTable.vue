@@ -30,7 +30,7 @@ const rows = computed(() => (all.value ? sorted.value : sorted.value.slice(0, SH
       </thead>
       <tbody>
         <tr v-for="g in rows" :key="g.ball">
-          <th scope="row">{{ formatBall(g.ball) }}</th>
+          <th scope="row"><span class="mini-ball">{{ formatBall(g.ball) }}</span></th>
           <td class="num">{{ formatInt(g.current_gap) }}</td>
           <td class="num">{{ formatInt(g.longest_gap) }}</td>
           <td class="num">

@@ -70,14 +70,17 @@ const outside = computed(
 )
 const outsideExpected = computed(() => pool.value * band.value.outside)
 
-const hover = ref<number | null>(null)
-function pick(event: PointerEvent) {
+const selected = ref<number | null>(null)
+// Click (or tap) selects the ball under the pointer; clicking it again, or outside the bars,
+// clears it. Hover is not used: on touch, pointerleave fires right after the tap and wiped it.
+function pick(event: MouseEvent) {
   const svg = event.currentTarget as SVGSVGElement
   const x = event.clientX - svg.getBoundingClientRect().left - M.left
   const i = Math.floor(x / chart.value.slot)
-  hover.value = i >= 0 && i < byBall.value.length ? i : null
+  const next = i >= 0 && i < byBall.value.length ? i : null
+  selected.value = next === selected.value ? null : next
 }
-const hovered = computed(() => (hover.value === null ? null : byBall.value[hover.value] ?? null))
+const selectedBall = computed(() => (selected.value === null ? null : byBall.value[selected.value] ?? null))
 
 // Shade relative to this window's least and most drawn ball, so the scale always uses the full
 // range. 18% green is the floor: lighter than that disappears into the page.
@@ -113,9 +116,9 @@ function signed(v: number): string {
 <template>
   <div class="freq">
     <p class="readout" aria-live="polite">
-      <template v-if="hovered">
-        Bola <strong>{{ formatBall(hovered.ball) }}</strong>: {{ formatInt(hovered.times) }}
-        {{ hovered.times === 1 ? 'vez' : 'vezes' }} · esperado {{ formatDecimal(data.expected) }}
+      <template v-if="selectedBall">
+        Bola <strong>{{ formatBall(selectedBall.ball) }}</strong>: {{ formatInt(selectedBall.times) }}
+        {{ selectedBall.times === 1 ? 'vez' : 'vezes' }} · esperado {{ formatDecimal(data.expected) }}
       </template>
       <template v-else>
         Esperado num sorteio honesto: <strong>{{ formatDecimal(data.expected) }}</strong> vezes por bola
@@ -124,19 +127,20 @@ function signed(v: number): string {
     </p>
 
     <template v-if="view === 'map'">
-      <div class="heat" role="img" :aria-label="`Mapa de frequência das ${cells.length} bolas`" @pointerleave="hover = null">
-        <div
+      <div class="heat" role="group" :aria-label="`Mapa de frequência das ${cells.length} bolas`">
+        <button
           v-for="(c, i) in cells"
           :key="c.ball"
+          type="button"
           class="heat-cell"
-          :class="{ 'heat-cell--out': c.out, 'heat-cell--on': hover === i }"
+          :class="{ 'heat-cell--out': c.out, 'heat-cell--on': selected === i }"
           :style="{ '--shade': `${c.shade}%` }"
-          :title="`${formatBall(c.ball)}: ${formatInt(c.times)}×`"
-          @pointerenter="hover = i"
-          @pointerdown="hover = i"
+          :aria-pressed="selected === i"
+          :aria-label="`Bola ${formatBall(c.ball)}: ${formatInt(c.times)} ${c.times === 1 ? 'vez' : 'vezes'}`"
+          @click="selected = selected === i ? null : i"
         >
           {{ formatBall(c.ball) }}
-        </div>
+        </button>
       </div>
       <p class="hint legend">
         menos ({{ formatInt(range.min) }}×)
@@ -154,9 +158,7 @@ function signed(v: number): string {
         :height="HEIGHT"
         role="img"
         :aria-label="`Frequência das ${byBall.length} bolas; esperado ${formatDecimal(data.expected)} vezes cada`"
-        @pointermove="pick"
-        @pointerdown="pick"
-        @pointerleave="hover = null"
+        @click="pick"
       >
         <rect
           class="band"
@@ -176,7 +178,7 @@ function signed(v: number): string {
             v-for="(b, i) in chart.bars"
             :key="b.ball"
             class="bar"
-            :class="{ 'bar--on': hover === i }"
+            :class="{ 'bar--on': selected === i }"
             :x="b.x"
             :y="b.y"
             :width="b.w"
@@ -204,13 +206,13 @@ function signed(v: number): string {
       <div>
         <h3>Mais sorteadas</h3>
         <ol>
-          <li v-for="i in most" :key="i.ball"><strong>{{ formatBall(i.ball) }}</strong> {{ formatInt(i.times) }}×</li>
+          <li v-for="i in most" :key="i.ball"><span class="mini-ball">{{ formatBall(i.ball) }}</span> {{ formatInt(i.times) }}×</li>
         </ol>
       </div>
       <div>
         <h3>Menos sorteadas</h3>
         <ol>
-          <li v-for="i in least" :key="i.ball"><strong>{{ formatBall(i.ball) }}</strong> {{ formatInt(i.times) }}×</li>
+          <li v-for="i in least" :key="i.ball"><span class="mini-ball">{{ formatBall(i.ball) }}</span> {{ formatInt(i.times) }}×</li>
         </ol>
       </div>
     </div>
@@ -232,7 +234,7 @@ function signed(v: number): string {
         <tbody>
           <tr v-for="r in ranking" :key="r.ball">
             <td class="num muted">{{ r.rank }}</td>
-            <th scope="row">{{ formatBall(r.ball) }}</th>
+            <th scope="row"><span class="mini-ball">{{ formatBall(r.ball) }}</span></th>
             <td class="num">{{ formatInt(r.times) }}</td>
             <td class="num" :class="{ gold: r.times < band.low || r.times > band.high }">{{ signed(r.diff) }}</td>
           </tr>
@@ -254,6 +256,8 @@ function signed(v: number): string {
 svg {
   display: block;
   touch-action: pan-y;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 .readout {
   min-height: 1.5em;
@@ -328,8 +332,12 @@ h3 {
   background: color-mix(in srgb, var(--green) var(--shade), var(--surface-2));
   border: 2px solid transparent;
   border-radius: 6px;
-  cursor: default;
+  padding: 0;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .heat-cell--out {
   border-color: var(--gold);
@@ -378,5 +386,10 @@ ol {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 </style>

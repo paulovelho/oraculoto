@@ -31,7 +31,11 @@ const noun = computed(() => (props.data.size === 2 ? 'pares' : 'trincas'))
       <tbody>
         <tr v-for="(c, i) in data.items" :key="c.balls.join('-')">
           <td class="num muted">{{ i + 1 }}</td>
-          <th scope="row" class="balls">{{ c.balls.map(formatBall).join(' · ') }}</th>
+          <th scope="row">
+            <span class="mini-balls" :class="{ 'mini-balls--trio': data.size === 3 }">
+              <span v-for="b in c.balls" :key="b" class="mini-ball">{{ formatBall(b) }}</span>
+            </span>
+          </th>
           <td class="num">{{ formatInt(c.times) }}</td>
           <td class="num">{{ data.expected > 0 ? formatDecimal(c.times / data.expected, 1) : '—' }}</td>
         </tr>
@@ -44,8 +48,15 @@ const noun = computed(() => (props.data.size === 2 ? 'pares' : 'trincas'))
 .scroll {
   overflow-x: auto;
 }
-.balls {
-  white-space: nowrap;
-  font-weight: 700;
+/* Three balls plus the number columns don't fit a phone at full size. */
+@media (max-width: 420px) {
+  .mini-balls--trio {
+    gap: 0.2rem;
+  }
+  .mini-balls--trio .mini-ball {
+    width: 1.6rem;
+    height: 1.6rem;
+    font-size: 0.75rem;
+  }
 }
 </style>

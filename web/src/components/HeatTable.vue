@@ -29,7 +29,7 @@ const signed = (n: number) => (n > 0 ? '+' : '') + formatDecimal(n)
       </thead>
       <tbody>
         <tr v-for="h in rows" :key="h.ball">
-          <th scope="row">{{ formatBall(h.ball) }}</th>
+          <th scope="row"><span class="mini-ball">{{ formatBall(h.ball) }}</span></th>
           <td class="num">{{ formatInt(h.recent) }}</td>
           <td class="num">{{ formatDecimal(h.expected, 1) }}</td>
           <td class="num" :class="h.heat > 0 ? 'hot' : 'cold'">{{ signed(h.heat) }}</td>
