@@ -54,7 +54,7 @@ watch(pastContest, () => runDraw())
 
     <LoadError v-if="error" :error="error" @retry="run" />
 
-    <section v-else-if="!page" class="block bet" aria-busy="true">
+    <section v-else-if="!page" class="block bet bet--center" aria-busy="true">
       <p class="eyebrow">Aposta do Oraculoto</p>
       <h2 class="bet__title"><span class="skeleton sk">Concurso 0000</span></h2>
       <ol class="balls-sk" aria-hidden="true">
@@ -69,7 +69,7 @@ watch(pastContest, () => runDraw())
     </section>
 
     <template v-else>
-      <section v-if="next" class="block bet bet--next">
+      <section v-if="next" class="block bet bet--next bet--center">
         <p class="eyebrow">Aposta do Oraculoto para o próximo concurso</p>
         <h2 class="bet__title">Concurso {{ formatInt(next.contest) }}</h2>
         <DrawBalls :balls="next.numbers" />
@@ -172,6 +172,15 @@ watch(pastContest, () => runDraw())
 }
 .bet--next {
   border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+}
+/* The upcoming bet: everything in the panel centered, balls included. */
+.bet--center {
+  text-align: center;
+}
+.bet--center > h2.bet__title,
+.bet--center :deep(.balls),
+.bet--center .balls-sk {
+  justify-content: center;
 }
 .block > h2.bet__title {
   display: flex;
