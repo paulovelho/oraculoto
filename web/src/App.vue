@@ -6,9 +6,10 @@ import { loadHealth } from '@/lib/health'
 
 onMounted(loadHealth)
 
-// "Resultados" covers the latest result and any contest page.
+// "Último resultado" covers any contest page too.
 const route = useRoute()
-const section = computed(() => (route.name === 'stats' ? 'stats' : route.name === 'home' || route.name === 'contest' ? 'results' : null))
+const SECTIONS: Record<string, string> = { home: 'home', stats: 'stats', latest: 'results', contest: 'results' }
+const section = computed(() => SECTIONS[String(route.name)] ?? null)
 </script>
 
 <template>
@@ -19,8 +20,9 @@ const section = computed(() => (route.name === 'stats' ? 'stats' : route.name ==
         <span>Oraculoto</span>
       </RouterLink>
       <nav class="nav" aria-label="Seções">
-        <RouterLink to="/" class="nav__link" :class="{ on: section === 'results' }">Resultados</RouterLink>
+        <RouterLink to="/" class="nav__link" :class="{ on: section === 'home' }">Aposta</RouterLink>
         <RouterLink to="/estatisticas" class="nav__link" :class="{ on: section === 'stats' }">Estatísticas</RouterLink>
+        <RouterLink to="/resultado" class="nav__link" :class="{ on: section === 'results' }">Último resultado</RouterLink>
       </nav>
       <HealthBadge />
     </div>
@@ -31,7 +33,7 @@ const section = computed(() => (route.name === 'stats' ? 'stats' : route.name ==
   </main>
 
   <footer class="site-footer container">
-    Resultados da Mega-Sena. Nenhum número aqui aumenta a sua chance de ganhar.
+    Oraculoto · Mega-Sena · <RouterLink to="/about">Créditos</RouterLink>
   </footer>
 </template>
 
@@ -92,5 +94,8 @@ main {
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+.site-footer a {
+  color: inherit;
 }
 </style>

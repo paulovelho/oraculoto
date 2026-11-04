@@ -1,6 +1,6 @@
 import { cached, prime } from '@/lib/cache'
 import { buildUrl, request, type Query } from './client'
-import type { Combinations, Draw, Frequency, Game, Gaps, Heat, Health, Together } from './types'
+import type { Combinations, Draw, Frequency, Game, Gaps, Heat, Health, OraculotoBet, Page, Together } from './types'
 
 export { ApiError, toApiError, type Query } from './client'
 export type * from './types'
@@ -39,3 +39,8 @@ export const getCombinations = (window: Query, size: 2 | 3, top = 20) =>
   stats<Combinations>('pairs', { ...window, size, top })
 export const getTogether = (window: Query, balls: number[], jackpot: boolean, page: number, limit = 20) =>
   stats<Together>('together', { ...window, balls: balls.join(','), jackpot, page, limit })
+
+// Oraculoto's own bets (docs/api.md §11). Never cached: a bet appears after the draw that the
+// session cache is keyed on, so a cached "no bet yet" would outlive the bet.
+export const getOraculotoBets = (page = 1, limit = 20) =>
+  request<Page<OraculotoBet>>(`/games/${GAME}/oraculoto`, { page, limit })

@@ -3,10 +3,11 @@ bets are placed by the `bet` command, never through the API."""
 
 from fastapi import APIRouter, Depends, Path
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, select
 
 from oraculoto.api.deps import Paging, get_conn, get_game, paging
 from oraculoto.api.envelope import ApiError, day, money, ok, page_of, utc_timestamp
+from oraculoto.crawler.caixa import next_draw_date
 from oraculoto.db import bets as db
 from oraculoto.db.draws import Game
 from oraculoto.db.results import DrawFilter, list_draws
@@ -34,7 +35,15 @@ def _bets_json(conn: Connection, game: Game, bets: list[db.Bet]) -> list[dict]:
     first, last = min(b.contest for b in bets), max(b.contest for b in bets)
     drawn, _ = list_draws(conn, game, DrawFilter(first, last), last - first + 1, 0)
     by_contest = {d.contest_number: d for d in drawn}
-    latest = conn.execute(select(func.max(draws.c.contest_number)).where(draws.c.game_id == game.id)).scalar()
+    newest = conn.execute(
+        select(draws.c.contest_number, draws.c.source_payload)
+        .where(draws.c.game_id == game.id)
+        .order_by(draws.c.contest_number.desc())
+        .limit(1)
+    ).first()
+    latest = newest.contest_number if newest else None
+    # Announced by Caixa with the latest result; only that contest's bet can use it.
+    upcoming = next_draw_date(newest.source_payload) if newest else None
 
     items = []
     for b in bets:
@@ -54,6 +63,8 @@ def _bets_json(conn: Connection, game: Game, bets: list[db.Bet]) -> list[dict]:
         if d is None:
             if latest is not None and b.contest < latest:
                 item["status"] = "missing"  # a gap in our draws, not a future contest
+            elif latest is not None and b.contest == latest + 1:
+                item["date"] = day(upcoming)  # when it will be drawn; null if not announced
         else:
             s = score(game, b.numbers, d.balls, {p.hits: p.prize_per_winner for p in d.prizes})
             item.update(

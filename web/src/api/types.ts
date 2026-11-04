@@ -126,3 +126,38 @@ export interface Together {
   limit: number
   total: number
 }
+
+/** Paged lists (docs/api.md §3). */
+export interface Page<T> {
+  items: T[]
+  page: number
+  limit: number
+  total: number
+}
+
+/** What one bet won in one tier (scored like a ticket, docs/api.md §6). */
+export interface BetWin {
+  hits: number
+  combinations: number
+  prize_per_winner: Money | null
+  amount: Money | null
+}
+
+/**
+ * Oraculoto's own bet on one contest (docs/api.md §11). Nulls and no prizes unless `drawn`, except
+ * `date`: on a `pending` bet it's the announced draw date (null if Caixa hasn't announced it).
+ */
+export interface OraculotoBet {
+  contest: number
+  /** Ascending. */
+  numbers: number[]
+  source: string
+  created_at: string
+  /** `missing`: the contest is past but its draw isn't in the database. */
+  status: 'pending' | 'drawn' | 'missing'
+  date: IsoDate | null
+  hits: number | null
+  matched: number[] | null
+  prizes: BetWin[]
+  total: Money | null
+}

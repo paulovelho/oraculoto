@@ -9,7 +9,7 @@ from oraculoto import cli
 from oraculoto.bets import BetError, place_bet
 from oraculoto.crawler.caixa import parse_draw
 from oraculoto.db.draws import save_draw
-from oraculoto.db.schema import oraculoto_bets
+from oraculoto.db.schema import draws, oraculoto_bets
 from oraculoto.guess.base import PastDraw
 from oraculoto.guess.oraculoto import ORACULOTO
 from oraculoto.importer.caixa_xlsx import import_xlsx
@@ -141,18 +141,29 @@ def test_pending_then_scored(crawled, megasena):
     (item,) = page["items"]
     assert item["contest"] == 3073 and item["status"] == "pending" and item["hits"] is None
     assert item["numbers"] == list(placed.numbers) and item["source"] == "guess_oraculoto@2"
+    assert item["date"] == "2026-10-22"  # announced with #3072
 
     drawn = list(placed.numbers[:4]) + [n for n in range(1, 61) if n not in placed.numbers][:2]
     balls = [f"{n:02d}" for n in drawn]
     store(crawled, megasena, 3073, listaDezenas=balls, dezenasSorteadasOrdemSorteio=balls)
     item = get(client, "/games/megasena/oraculoto/3073")
     assert item["status"] == "drawn" and item["hits"] == 4
+    assert item["date"] == get(client, "/games/megasena/draws/3073")["date"]  # now the real one
     assert item["matched"] == sorted(placed.numbers[:4])
     assert [p["hits"] for p in item["prizes"]] == [4]
 
 
 def test_no_bet_on_that_contest(crawled):
     assert get(api_client(crawled), "/games/megasena/oraculoto/3000", 404)["code"] == "not_found"
+
+
+def test_pending_date_unknown_without_an_announcement(clean_db, megasena):
+    store(clean_db, megasena, 3072)
+    bet(clean_db, megasena)
+    with clean_db.begin() as conn:  # e.g. the latest row came from an xlsx re-import
+        conn.execute(draws.update().values(source_payload=None))
+    (item,) = get(api_client(clean_db), "/games/megasena/oraculoto")["items"]
+    assert item["status"] == "pending" and item["date"] is None
 
 
 def test_empty_list(crawled):
