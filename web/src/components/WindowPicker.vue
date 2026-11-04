@@ -15,9 +15,12 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [WindowSel] }>()
 
 const kind = ref<WindowSel['kind']>('all')
-const last = ref('')
-const from = ref('')
-const to = ref('')
+// v-model on <input type="number"> hands back a number once the field holds one (and '' when
+// it's empty or unparseable), so these are string | number. Read them through text().
+const last = ref<string | number>('')
+const from = ref<string | number>('')
+const to = ref<string | number>('')
+const text = (v: string | number) => String(v).trim()
 
 function reset() {
   const v = props.modelValue
@@ -31,12 +34,14 @@ watch(() => props.modelValue, reset, { immediate: true, deep: true })
 const draft = computed<{ sel: WindowSel } | { error: string }>(() => {
   if (kind.value === 'all') return { sel: { kind: 'all' } }
   if (kind.value === 'last') {
-    const n = positiveInt(last.value)
+    const n = positiveInt(text(last.value))
     return n === null ? { error: 'Informe quantos concursos (1 ou mais).' } : { sel: { kind: 'last', last: n } }
   }
-  const f = from.value.trim() === '' ? null : positiveInt(from.value)
-  const t = to.value.trim() === '' ? null : positiveInt(to.value)
-  if ((from.value.trim() !== '' && f === null) || (to.value.trim() !== '' && t === null))
+  const fs = text(from.value)
+  const ts = text(to.value)
+  const f = fs === '' ? null : positiveInt(fs)
+  const t = ts === '' ? null : positiveInt(ts)
+  if ((fs !== '' && f === null) || (ts !== '' && t === null))
     return { error: 'Concursos são números a partir de 1.' }
   if (f === null && t === null) return { error: 'Informe pelo menos um dos dois concursos.' }
   if (f !== null && t !== null && f > t) return { error: 'O primeiro concurso vem depois do último.' }

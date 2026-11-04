@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build the web app at home and copy it into the server's public/ (docs/web.md §2). DreamHost has no Node.
-#   deploy/deploy-web.sh            build, type-check, then rsync
-#   deploy/deploy-web.sh --dry-run  build, then show what rsync would change, without changing it
-# Target in deploy/deploy.conf. Keeps the API's entry points (.htaccess, index.cgi) and deletes old hashed assets.
+#   scripts/deploy-web.sh            build, type-check, then rsync
+#   scripts/deploy-web.sh --dry-run  build, then show what rsync would change, without changing it
+# Target in scripts/deploy.conf. Keeps the API's entry points (.htaccess, index.cgi) and deletes old hashed assets.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=deploy.conf
-. "$root/deploy/deploy.conf"
+. "$root/scripts/deploy.conf"
 
 dry_run=()
 if [ "${1:-}" = "--dry-run" ]; then

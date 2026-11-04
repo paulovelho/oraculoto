@@ -1,6 +1,6 @@
 import { cached, prime } from '@/lib/cache'
 import { buildUrl, request, type Query } from './client'
-import type { Combinations, Draw, Frequency, Game, Gaps, Health, Together } from './types'
+import type { Combinations, Draw, Frequency, Game, Gaps, Heat, Health, Together } from './types'
 
 export { ApiError, toApiError, type Query } from './client'
 export type * from './types'
@@ -33,6 +33,8 @@ function stats<T>(name: string, query: Query): Promise<T> {
 /** `window` is what `windowQuery` (lib/statsQuery) builds: {}, { last } or { from, to }. */
 export const getFrequency = (window: Query) => stats<Frequency>('frequency', window)
 export const getGaps = (window: Query) => stats<Gaps>('gaps', window)
+// No window: the API fixes it at 100 so the browser can cache it (Cache-Control + ETag).
+export const getHeat = () => stats<Heat>('heat', {})
 export const getCombinations = (window: Query, size: 2 | 3, top = 20) =>
   stats<Combinations>('pairs', { ...window, size, top })
 export const getTogether = (window: Query, balls: number[], jackpot: boolean, page: number, limit = 20) =>

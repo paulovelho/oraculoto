@@ -132,3 +132,25 @@ def test_draws_page(client):
     assert len(d["items"]) == 100
     by_date = data(client, "/draws/by-date", **{"from": "2026-01-01", "to": "2026-01-01"})
     assert [x["contest"] for x in by_date["items"]] == [2955]  # Mega da Virada 2025
+
+
+def test_heat(client):
+    r = client.get(MS + "/stats/heat", params={"last": 5})  # window params don't apply: fixed at 100
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["window"] == {"from": 2973, "to": 3072, "draws": 100} and d["history"] == FULL
+    assert d["version"] == 1 and len(d["items"]) == 60
+    first, last = d["items"][0], d["items"][-1]
+    assert (first["ball"], first["recent"], first["heat"]) == (58, 18, 8.23)  # the same score the bet uses
+    assert last["ball"] == 34
+    assert r.headers["cache-control"] == "private, max-age=3600"
+    assert r.headers["etag"] == 'W/"heat@1-megasena-3072"'
+
+
+def test_heat_not_modified(client):
+    r = client.get(MS + "/stats/heat", headers={"If-None-Match": 'W/"heat@1-megasena-3072"'})
+    assert r.status_code == 304 and r.content == b"" and r.headers["etag"] == 'W/"heat@1-megasena-3072"'
+    assert (
+        client.get(MS + "/stats/heat", headers={"If-None-Match": 'W/"heat@1-megasena-3071"'}).status_code
+        == 200
+    )

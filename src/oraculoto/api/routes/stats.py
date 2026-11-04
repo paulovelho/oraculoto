@@ -4,7 +4,7 @@ Every response carries the window it covered and what a fair draw would give, so
 never shows up without its baseline.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
@@ -12,8 +12,13 @@ from oraculoto.api.deps import Paging, WindowParams, get_conn, get_game, paging,
 from oraculoto.api.envelope import ApiError, day, ok, page_of
 from oraculoto.db import stats
 from oraculoto.db.draws import Game
+from oraculoto.guess.heat import HEAT_VERSION, HEAT_WINDOW, heat, ranked
 
 router = APIRouter(prefix="/games/{game}/stats", tags=["stats"])
+
+# /heat only changes when a contest arrives, so browsers may keep it for an hour without asking,
+# then revalidate with the ETag. A 304 still starts Python (CGI); only max-age saves that.
+HEAT_MAX_AGE = 3600
 
 
 def _window(conn: Connection, game: Game, wp: WindowParams) -> stats.Window:
@@ -126,3 +131,39 @@ def gaps(
             ],
         }
     )
+
+
+@router.get(
+    "/heat", summary=f"per ball: times in the last {HEAT_WINDOW} contests minus what its own rate predicts"
+)
+def heat_scores(
+    request: Request, game: Game = Depends(get_game), conn: Connection = Depends(get_conn)
+) -> Response:
+    """Fixed window, no window parameters: one answer per latest contest, which is what lets it be cached."""
+    overall = stats.resolve_window(conn, game)
+    etag = f'W/"heat@{HEAT_VERSION}-{game.slug}-{overall.last_contest or 0}"'
+    headers = {"ETag": etag, "Cache-Control": f"private, max-age={HEAT_MAX_AGE}"}
+    if etag in request.headers.get("if-none-match", ""):
+        return Response(status_code=304, headers=headers)
+    recent = stats.resolve_window(conn, game, last=HEAT_WINDOW)
+    recent_counts = dict(stats.frequency(conn, game, recent))
+    overall_counts = dict(stats.frequency(conn, game, overall))
+    scores = heat(game, recent_counts, overall_counts, overall.draws, recent.draws)
+    response = ok(
+        {
+            "window": window_json(recent),
+            "history": window_json(overall),
+            "version": HEAT_VERSION,
+            "items": [
+                {
+                    "ball": b,
+                    "heat": round(scores[b], 2),
+                    "recent": recent_counts[b],
+                    "overall": overall_counts[b],
+                }
+                for b in ranked(scores)
+            ],
+        }
+    )
+    response.headers.update(headers)
+    return response

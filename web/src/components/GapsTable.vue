@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Gaps } from '@/api'
-import { formatBall, formatDecimal, formatInt } from '@/lib/format'
+import { formatBall, formatInt } from '@/lib/format'
 
-// Current absence first, as the API sends it. All 60 rows are there; the first 10 are shown
-// until asked, so the page doesn't open on a wall of numbers.
-const props = defineProps<{ data: Gaps }>()
+// All 60 rows are there; the first 20 (in the chosen order, to match the
+// 20 rows of "Mais frequentes" next to it) are shown until asked, so the page
+// doesn't open on a wall of numbers. Ties keep ball order.
+const props = defineProps<{ data: Gaps; order: 'most' | 'least' }>()
 
+const SHOWN = 20
 const all = ref(false)
-const rows = computed(() => (all.value ? props.data.items : props.data.items.slice(0, 10)))
+const sorted = computed(() => {
+  const dir = props.order === 'most' ? -1 : 1
+  return [...props.data.items].sort((a, b) => dir * (a.current_gap - b.current_gap) || a.ball - b.ball)
+})
+const rows = computed(() => (all.value ? sorted.value : sorted.value.slice(0, SHOWN)))
 </script>
 
 <template>
-  <p class="hint">
-    Num sorteio honesto, uma bola fica em média <strong>{{ formatDecimal(data.expected_gap) }}</strong> concursos sem
-    sair entre duas aparições. Uma bola "atrasada" não tem mais chance de sair no próximo: o sorteio não tem memória.
-  </p>
   <div class="scroll">
     <table class="data-table">
       <thead>
@@ -43,8 +45,8 @@ const rows = computed(() => (all.value ? props.data.items : props.data.items.sli
   </div>
   <p class="hint">
     Em concursos, dentro da janela. "Maior ausência" só conta intervalos entre duas aparições.
-    <button v-if="data.items.length > 10" type="button" class="link" @click="all = !all">
-      {{ all ? 'Mostrar só as 10 primeiras' : `Mostrar as ${data.items.length}` }}
+    <button v-if="data.items.length > SHOWN" type="button" class="link" @click="all = !all">
+      {{ all ? `Mostrar só as ${SHOWN} primeiras` : `Mostrar as ${data.items.length}` }}
     </button>
   </p>
 </template>

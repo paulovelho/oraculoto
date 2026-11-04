@@ -20,7 +20,7 @@ const section = computed(() => (route.name === 'stats' ? 'stats' : route.name ==
       </RouterLink>
       <nav class="nav" aria-label="Seções">
         <RouterLink to="/" class="nav__link" :class="{ on: section === 'results' }">Resultados</RouterLink>
-        <RouterLink to="/stats" class="nav__link" :class="{ on: section === 'stats' }">Estatísticas</RouterLink>
+        <RouterLink to="/estatisticas" class="nav__link" :class="{ on: section === 'stats' }">Estatísticas</RouterLink>
       </nav>
       <HealthBadge />
     </div>

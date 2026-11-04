@@ -110,6 +110,7 @@ As built, one contest is:
 | `GET /games/{game}/stats/together?balls=10,53&jackpot=false` | how many contests drew all the given balls, the last one, and optionally the list. With `jackpot=true`, only contests where the jackpot was won. `balls`: 1 up to `balls_drawn` distinct balls within range |
 | `GET /games/{game}/stats/pairs?size=2&top=20` | most frequent pairs (`size=3` for triples), plus the count expected by chance |
 | `GET /games/{game}/stats/gaps` | per ball: last contest drawn, current absence, longest absence |
+| `GET /games/{game}/stats/heat` | per ball: "heat", times in the last 100 contests minus what its own long-run rate predicts. **No window**: fixed at 100 |
 
 The SQL behind each one, tested on the real data with the expected results, is in `docs/database.md` §6.
 
@@ -119,6 +120,8 @@ As built:
 - **together:** `{ window, balls, jackpot, expected, last: { contest, date } | null, items: [{ contest, date }], page, limit, total }`. The list is always there, paginated with the §3 convention, newest first; `total` is the count. `expected` = contests considered × P(one draw holds all the balls), where "considered" is the whole window, or only the jackpot contests with `jackpot=true` (a baseline that assumes the balls don't affect whether somebody wins).
 - **pairs:** `size` 2 or 3, `top` 1–100 (default 20). `{ window, size, expected, items: [{ balls, times }] }`, ties by lower balls.
 - **gaps:** `{ window, expected_gap, items: [{ ball, last_seen, current_gap, longest_gap }] }`, longest current absence first. Within the window: `current_gap` counts up to the window's last contest; `longest_gap` counts runs between two appearances only, as in `docs/database.md` §6 (`null` with fewer than two). `expected_gap` = (1 − p) / p with p = balls_drawn / pool (9 for Mega-Sena).
+- **heat** (decided 2026-11-03): `{ window, history, version, items: [{ ball, heat, recent, overall }] }`, hottest first (ties: lower ball). `heat` = `recent` − `overall` × window draws / history draws, rounded to 2 decimals; the expected count for the window is `recent − heat`. Window parameters are ignored: the window is fixed at the last 100 contests (`HEAT_WINDOW` in `src/oraculoto/guess/heat.py`), so there is one answer per latest contest. The same function completes oraculoto's bet (§11).
+  - **HTTP cache:** `Cache-Control: private, max-age=3600` plus `ETag: W/"heat@{version}-{game}-{latest contest}"`. Within the hour the browser doesn't call the API at all; after it, `If-None-Match` with the current tag answers 304 with no body. A 304 still starts Python under CGI: only `max-age` saves that. Bump `HEAT_VERSION` whenever the formula or the window changes.
 - **health:** `{ database: "ok", games: [{ game, latest_contest, latest_date, last_crawl, stale }] }`, `last_crawl` being the latest `ok` or `nothing_new` run of kind `crawl` in `sync_runs` (xlsx imports don't count), and `stale` true when there is none or it's more than 2 days old (`docs/crawler.md` §5). Renamed from `last_sync` on 2026-10-28. If the database is unreachable: 503 `db_unavailable`, details only in the log.
 
 **Guesses**
@@ -236,7 +239,7 @@ As built: `{ ticket, items, total }`, one item per contest: `{ contest, status, 
 ## 7. Admin (command line only in v1)
 
 - `users invite <email> [--admin]`, `users block <email>`, `users unblock <email>`, `users list` (built 2026-10-28). Emails are stored lowercase. `--admin` sets `role`, which nothing reads in v1.
-- On the server: `deploy/create-admin.sh <email>` runs `users invite <email> --admin` with the project's `.venv` and `.env`, from any folder.
+- On the server: `scripts/create-admin.sh <email>` runs `users invite <email> --admin` with the project's `.venv` and `.env`, from any folder.
 - The importer and crawler commands are described in their own plans.
 
 There are no admin HTTP endpoints in v1, which means less to attack.
@@ -292,7 +295,17 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 
 Oraculoto bets on every contest, as if it played itself: **one bet per contest**, made by its own function, `guess_oraculoto`. This is the one guess that is stored. It's a bet placed before the draw, not a function output to rebuild later, so its record can't be rewritten by changing the code afterwards.
 
-- **Function:** `guess_oraculoto` (`src/oraculoto/guess/oraculoto.py`) keeps the §5 contract. Its randomness depends on the contest: the generator is seeded with the game and the target contest, so the same contest always gives the same numbers. It's not in the registry: not in `/functions`, not backtestable through the API, not a ticket `source`. The current version is a placeholder (random numbers); the real one is still to be designed.
+- **Function:** `guess_oraculoto` (`src/oraculoto/guess/oraculoto.py`) keeps the §5 contract. It's not in the registry: not in `/functions`, not backtestable through the API, not a ticket `source`. Still being designed (decided so far on 2026-11-03), as `guess_oraculoto@2` (`@1` was the random placeholder; its bets keep that source). Filled in this order, every step stopping once the bet holds k balls (in the history, steps 0–4 never brought more than 6):
+  0. Every ball that **didn't come out in any of the last 52 contests** goes in, most absent first.
+  1. Over the whole history: the **absent balls**: "Ausente há" (as in `/stats/gaps`) above 30, most absent first.
+  2. The triples that came out **exactly MAX − 1** times, MAX being the most frequent triple's count.
+  3. Through the absent balls, most absent first, the first one in any of those triples brings **its triple** and the search stops. Several triples: the largest summed absence of its three balls; still tied: drawn at random, the generator seeded with the game and the target contest (so the same contest always gives the same numbers).
+  4. If no absent ball is in one, **every absent ball** goes in (most absent first, up to k).
+  5. Last 52 contests: the ball with the **second-largest count**. Positions go by count value (balls tied on the largest count are all 1st; the next count is 2nd). If several balls hold the 2nd, the 3rd is tried, and so on until a position holds one ball alone; if none does, skipped.
+  6. Last 52 contests: the ball **absent the longest** (within the window), from position 1 down, by the same rule.
+     Steps 5 and 6 are skipped when their ball is already in the bet.
+  7. **Last resort:** completed up to k with the hottest balls (`heat`, §4) not yet in.
+  - For #3073 (history up to #3072): nothing missed the last 52; triple (8, 23, 34); 11 (alone at 10 times, behind 16 and 43 at 11); 34 is the longest absent but already in; heat adds 58 and 27 → **08 11 23 27 34 58**.
 - **Placing it:** `oraculoto bet [--game megasena] [--k N]`, run on the server (by a bot or after `ingest`). The target is the contest after the latest one stored, and the function gets the history up to it.
   - `k` defaults to the game's minimum bet (6); more numbers only with `--k`.
   - Allowed only until bets close: 19:00 Brasília on the target's draw date, which comes from the latest contest's `dataProximoConcurso`. If the crawler fell behind and that time has passed, the contest is **missed**: no bet, never a late one. A latest contest without an announced date (xlsx rows) → no bet.

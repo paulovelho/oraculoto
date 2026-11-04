@@ -8,7 +8,7 @@ logs/
 var/
 web/node_modules/
 web/dist/
-# Web build copied in by deploy/deploy-web.sh; only the API entry points are tracked.
+# Web build copied in by scripts/deploy-web.sh; only the API entry points are tracked.
 public/*
 !public/.htaccess
 !public/index.cgi

@@ -56,7 +56,7 @@ RewriteRule ^ index.html [L]
 
 - An unknown path outside `/api` now gets the app (which shows its own 404), not the JSON `not_found` envelope. Unknown paths under `/api` still reach FastAPI.
 - **Build output:** `vite build` writes to `web/dist/` (never straight into `public/`: `emptyOutDir` would delete `index.cgi` and `.htaccess`). Build at home, not on DreamHost (no Node there). `web/dist/` is not committed.
-- **Deploy:** `deploy/deploy-web.sh` (`--dry-run` to preview). It runs the tests and the build (type check included) under Node 22, then rsyncs `web/dist/` into the server's `public/` with `--delete`, excluding `.htaccess` and `index.cgi`. `--delete` only removes old hashed assets; the two excludes keep the API's entry points. Target (`DEPLOY_HOST`, `DEPLOY_PATH`) in `deploy/deploy.conf`: `platypusweb@paulovelho.com`, `~/oraculoto`. Both can be overridden from the environment.
+- **Deploy:** `scripts/deploy-web.sh` (`--dry-run` to preview). It runs the tests and the build (type check included) under Node 22, then rsyncs `web/dist/` into the server's `public/` with `--delete`, excluding `.htaccess` and `index.cgi`. `--delete` only removes old hashed assets; the two excludes keep the API's entry points. Target (`DEPLOY_HOST`, `DEPLOY_PATH`) in `scripts/deploy.conf`: `platypusweb@paulovelho.com`, `~/oraculoto`. Both can be overridden from the environment.
 - Permissions: suEXEC doesn't care about static files; the deploy sets them `644` and folders `755` (`--chmod`).
 
 ## 3. Login

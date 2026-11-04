@@ -132,7 +132,7 @@ def protected_routes() -> list[tuple[str, str]]:
 def test_every_route_but_health_needs_a_token(sample, headers):
     client = api_client(sample, None)
     routes = protected_routes()
-    assert len(routes) == 20
+    assert len(routes) == 21
     for method, path in routes:
         r = client.request(method, path, params={"balls": "10"}, headers=headers, json={})
         assert r.status_code == 401, (method, path)
@@ -149,6 +149,7 @@ PUBLIC_PATHS = [
     "/games/megasena/stats/together?balls=10",
     "/games/megasena/stats/pairs",
     "/games/megasena/stats/gaps",
+    "/games/megasena/stats/heat",
     "/functions",
     "/games/megasena/backtest?function=hot",
     "/games/megasena/oraculoto",

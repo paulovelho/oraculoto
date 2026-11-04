@@ -6,7 +6,7 @@
 #   - --remote-cmd: oraculoto on the server; `~` is left for the remote shell to expand
 #
 # Install:
-#   cp deploy/systemd/oraculoto-fetch.* ~/.config/systemd/user/
+#   cp scripts/systemd/oraculoto-fetch.* ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now oraculoto-fetch.timer
 #   loginctl enable-linger "$USER"     # optional: also run while logged out
 # Logs: journalctl --user -u oraculoto-fetch

@@ -94,6 +94,15 @@ export interface Gaps {
   items: BallGap[]
 }
 
+/** Fixed at the last 100 contests (docs/api.md §4): it ignores the stats window. */
+export interface Heat {
+  window: StatsWindow
+  history: StatsWindow
+  version: number
+  /** Hottest first. heat = recent − what the ball's own long-run rate predicts for the window. */
+  items: { ball: number; heat: number; recent: number; overall: number }[]
+}
+
 export interface Combinations {
   window: StatsWindow
   size: number

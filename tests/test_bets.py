@@ -51,7 +51,7 @@ def test_bets_on_the_next_contest(crawled, megasena):
     assert out.result == "placed"
     assert out.bet.contest == 3073
     assert len(out.bet.numbers) == 6 and list(out.bet.numbers) == sorted(out.bet.numbers)
-    assert out.bet.source == "guess_oraculoto@1"
+    assert out.bet.source == "guess_oraculoto@2"
     assert f"{out.closes_at:%Y-%m-%d %H:%M}" == "2026-10-22 19:00"
 
 
@@ -101,12 +101,9 @@ def test_no_draws_no_bet(clean_db, megasena):
         bet(clean_db, megasena)
 
 
-def test_the_guess_depends_on_the_contest_only(megasena):
-    def history(last: int) -> list[PastDraw]:
-        return [PastDraw(n, BEFORE.date(), (1, 2, 3, 4, 5, 6), None) for n in range(1, last + 1)]
-
-    assert ORACULOTO.guess(megasena, history(10), 6, {}) == ORACULOTO.guess(megasena, history(10), 6, {})
-    assert ORACULOTO.guess(megasena, history(10), 6, {}) != ORACULOTO.guess(megasena, history(11), 6, {})
+def test_the_same_history_gives_the_same_bet(megasena):
+    history = [PastDraw(n, BEFORE.date(), (1, 2, 3, 4, 5, 6), None) for n in range(1, 11)]
+    assert ORACULOTO.guess(megasena, history, 6, {}) == ORACULOTO.guess(megasena, history, 6, {})
 
 
 # ---------------------------------------------------------------- command line
@@ -143,7 +140,7 @@ def test_pending_then_scored(crawled, megasena):
     assert page["total"] == 1
     (item,) = page["items"]
     assert item["contest"] == 3073 and item["status"] == "pending" and item["hits"] is None
-    assert item["numbers"] == list(placed.numbers) and item["source"] == "guess_oraculoto@1"
+    assert item["numbers"] == list(placed.numbers) and item["source"] == "guess_oraculoto@2"
 
     drawn = list(placed.numbers[:4]) + [n for n in range(1, 61) if n not in placed.numbers][:2]
     balls = [f"{n:02d}" for n in drawn]

@@ -12,6 +12,4 @@
 
 - Don't commit anything unless explicitly asked. Leave Git actions to me.
 
-
-
-
+- Never say that oraculoto's prediction is not a real prediction.

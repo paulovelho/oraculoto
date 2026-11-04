@@ -5,9 +5,13 @@ import { formatBall, formatDecimal, formatInt } from '@/lib/format'
 import { fairBand } from '@/lib/stats'
 import type { BallRules } from '@/lib/statsQuery'
 
-// 60 bars in ball order, the fair-draw expectation as a line and its exact binomial band behind
-// them (docs/web.md §5: hand-written SVG, never a number without its baseline).
-const props = defineProps<{ data: Frequency; rules: BallRules }>()
+// Two views of the same counts. "map": a 10-per-row grid (like the ball picker) shaded from faded
+// to full green by how often each ball came out; balls outside the fair band get a gold ring.
+// "bars": 60 bars in ball order, the fair-draw expectation as a line and its exact binomial band
+// behind them (docs/web.md §5: hand-written SVG, never a number without its baseline).
+const props = withDefaults(defineProps<{ data: Frequency; rules: BallRules; view?: 'map' | 'bars' }>(), {
+  view: 'map',
+})
 
 const HEIGHT = 240
 const M = { top: 12, right: 8, bottom: 24, left: 36 }
@@ -75,8 +79,35 @@ function pick(event: PointerEvent) {
 }
 const hovered = computed(() => (hover.value === null ? null : byBall.value[hover.value] ?? null))
 
+// Shade relative to this window's least and most drawn ball, so the scale always uses the full
+// range. 18% green is the floor: lighter than that disappears into the page.
+const range = computed(() => {
+  const times = byBall.value.map((i) => i.times)
+  return { min: Math.min(...times), max: Math.max(...times) }
+})
+const cells = computed(() => {
+  const { min, max } = range.value
+  return byBall.value.map((item) => {
+    const t = max === min ? 1 : (item.times - min) / (max - min)
+    return {
+      ...item,
+      shade: Math.round(18 + t * 82),
+      out: item.times < band.value.low || item.times > band.value.high,
+    }
+  })
+})
+const LEGEND_STEPS = [18, 38, 59, 79, 100]
+
 const most = computed(() => props.data.items.slice(0, 5))
 const least = computed(() => props.data.items.slice(-5).reverse())
+
+const showAll = ref(false)
+const ranking = computed(() =>
+  props.data.items.map((item, i) => ({ ...item, rank: i + 1, diff: item.times - props.data.expected })),
+)
+function signed(v: number): string {
+  return (v > 0 ? '+' : v < 0 ? '−' : '') + formatDecimal(Math.abs(v), 1)
+}
 </script>
 
 <template>
@@ -92,7 +123,32 @@ const least = computed(() => props.data.items.slice(-5).reverse())
       </template>
     </p>
 
-    <div ref="box" class="box">
+    <template v-if="view === 'map'">
+      <div class="heat" role="img" :aria-label="`Mapa de frequência das ${cells.length} bolas`" @pointerleave="hover = null">
+        <div
+          v-for="(c, i) in cells"
+          :key="c.ball"
+          class="heat-cell"
+          :class="{ 'heat-cell--out': c.out, 'heat-cell--on': hover === i }"
+          :style="{ '--shade': `${c.shade}%` }"
+          :title="`${formatBall(c.ball)}: ${formatInt(c.times)}×`"
+          @pointerenter="hover = i"
+          @pointerdown="hover = i"
+        >
+          {{ formatBall(c.ball) }}
+        </div>
+      </div>
+      <p class="hint legend">
+        menos ({{ formatInt(range.min) }}×)
+        <span v-for="st in LEGEND_STEPS" :key="st" class="swatch" :style="{ '--shade': `${st}%` }"></span>
+        mais ({{ formatInt(range.max) }}×) ·
+        <span class="swatch swatch--out"></span> fora da faixa do acaso ({{ formatInt(band.low) }} a
+        {{ formatInt(band.high) }}). {{ outside }} {{ outside === 1 ? 'bola fica' : 'bolas ficam' }} fora; o acaso,
+        sozinho, deixaria em média {{ formatDecimal(outsideExpected, 1) }}.
+      </p>
+    </template>
+
+    <div v-show="view === 'bars'" ref="box" class="box">
       <svg
         :width="width"
         :height="HEIGHT"
@@ -137,7 +193,7 @@ const least = computed(() => props.data.items.slice(-5).reverse())
       </svg>
     </div>
 
-    <p class="hint legend">
+    <p v-if="view === 'bars'" class="hint legend">
       <span class="key key--line"></span> esperado
       <span class="key key--band"></span> faixa onde cada bola cai com ~95% de chance num sorteio honesto.
       {{ outside }} {{ outside === 1 ? 'bola fica' : 'bolas ficam' }} fora; o acaso, sozinho, deixaria em média
@@ -157,6 +213,31 @@ const least = computed(() => props.data.items.slice(-5).reverse())
           <li v-for="i in least" :key="i.ball"><strong>{{ formatBall(i.ball) }}</strong> {{ formatInt(i.times) }}×</li>
         </ol>
       </div>
+    </div>
+    <p class="hint">
+      <button type="button" class="link" @click="showAll = !showAll">
+        {{ showAll ? 'Esconder a tabela' : `Ver as ${ranking.length} bolas` }}
+      </button>
+    </p>
+    <div v-if="showAll" class="scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col" class="num">#</th>
+            <th scope="col">Bola</th>
+            <th scope="col" class="num">Vezes</th>
+            <th scope="col" class="num">vs. esperado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in ranking" :key="r.ball">
+            <td class="num muted">{{ r.rank }}</td>
+            <th scope="row">{{ formatBall(r.ball) }}</th>
+            <td class="num">{{ formatInt(r.times) }}</td>
+            <td class="num" :class="{ gold: r.times < band.low || r.times > band.high }">{{ signed(r.diff) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
@@ -227,6 +308,68 @@ h3 {
   color: var(--text-muted);
   font-weight: 600;
   margin-bottom: 0.35rem;
+}
+.heat {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 34rem;
+  margin-inline: auto;
+}
+.heat-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+  background: color-mix(in srgb, var(--green) var(--shade), var(--surface-2));
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+}
+.heat-cell--out {
+  border-color: var(--gold);
+}
+.heat-cell--on {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.swatch {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: middle;
+  margin: 0 0.1em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--green) var(--shade), var(--surface-2));
+}
+.swatch--out {
+  background: transparent;
+  border: 2px solid var(--gold);
+}
+.scroll {
+  overflow-x: auto;
+}
+.link {
+  padding: 0;
+  font: inherit;
+  color: var(--gold);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.gold {
+  color: var(--gold);
+}
+@media (max-width: 380px) {
+  .heat-cell {
+    font-size: 0.75rem;
+  }
 }
 ol {
   display: flex;

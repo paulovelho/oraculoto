@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCombinations, getFrequency, getGame, getGaps } from '@/api'
+import { getCombinations, getFrequency, getGame, getGaps, getHeat } from '@/api'
 import CombinationsTable from '@/components/CombinationsTable.vue'
 import FrequencyChart from '@/components/FrequencyChart.vue'
 import GapsTable from '@/components/GapsTable.vue'
+import HeatTable from '@/components/HeatTable.vue'
 import LoadError from '@/components/LoadError.vue'
 import TogetherSearch from '@/components/TogetherSearch.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
+import { formatBall, formatDecimal, formatInt } from '@/lib/format'
 import { useHealth } from '@/lib/health'
 import {
   parseTogether,
@@ -42,10 +44,13 @@ const freq = useLoad(() => getFrequency(winQuery.value))
 const gaps = useLoad(() => getGaps(winQuery.value))
 const size = ref<2 | 3>(2)
 const combos = useLoad(() => getCombinations(winQuery.value, size.value))
+// Not tied to the window (fixed at 100 by the API), so it loads once.
+const heat = useLoad(getHeat)
 
 onMounted(() => {
   document.title = 'Estatísticas · Oraculoto'
   game.run()
+  heat.run()
 })
 watch(
   () => JSON.stringify(winQuery.value),
@@ -57,6 +62,21 @@ watch(
   { immediate: true },
 )
 watch(size, () => combos.run())
+
+const freqView = ref<'map' | 'bars'>('map')
+const gapOrder = ref<'most' | 'least'>('most')
+const heatOrder = ref<'hot' | 'cold'>('hot')
+// The current record absence, every ball tied on it ("27, 41").
+const biggestGap = computed(() => {
+  const items = gaps.data.value?.items
+  if (!items?.length) return null
+  const gap = Math.max(...items.map((g) => g.current_gap))
+  const tied = items
+    .filter((g) => g.current_gap === gap)
+    .map((g) => g.ball)
+    .sort((a, b) => a - b)
+  return { gap, balls: tied.map(formatBall).join(', '), count: tied.length }
+})
 
 // Any response tells which contests the window covered; frequency is the cheapest to wait for.
 const covered = computed(
@@ -86,20 +106,38 @@ function setTogether(next: TogetherSel) {
     <WindowPicker :model-value="sel" :covered="covered" :latest="latestContest" @update:model-value="setWindow" />
 
     <section class="block">
-      <h2>Frequência</h2>
+      <header class="block-head">
+        <h2>Frequência</h2>
+        <div class="tabs" role="radiogroup" aria-label="Visualização">
+          <label><input v-model="freqView" type="radio" value="map" /> Mapa</label>
+          <label><input v-model="freqView" type="radio" value="bars" /> Barras</label>
+        </div>
+      </header>
       <LoadError v-if="freq.error.value" :error="freq.error.value" @retry="freq.run" />
       <div v-else-if="!freq.data.value" class="skeleton sk sk--block" aria-busy="true"></div>
       <p v-else-if="empty" class="muted">Nenhum concurso nessa janela.</p>
-      <FrequencyChart v-else :data="freq.data.value" :rules="rules" />
+      <FrequencyChart v-else :data="freq.data.value" :rules="rules" :view="freqView" />
     </section>
 
     <div class="cols">
       <section class="block">
-        <h2>Ausências</h2>
+        <header class="block-head">
+          <h2>Ausências</h2>
+          <div class="tabs" role="radiogroup" aria-label="Ordem">
+            <label><input v-model="gapOrder" type="radio" value="most" /> Mais ausentes</label>
+            <label><input v-model="gapOrder" type="radio" value="least" /> Menos ausentes</label>
+          </div>
+          <p v-if="biggestGap && !empty" class="gap-summary">
+            {{ biggestGap.count > 1 ? 'Bolas' : 'Bola' }} <strong class="gold">{{ biggestGap.balls }}</strong> ·
+            {{ biggestGap.count > 1 ? 'ausentes' : 'ausente' }} há
+            <strong class="gold">{{ formatInt(biggestGap.gap) }}</strong> concursos · média
+            <strong>{{ formatDecimal(gaps.data.value?.expected_gap) }}</strong>
+          </p>
+        </header>
         <LoadError v-if="gaps.error.value" :error="gaps.error.value" @retry="gaps.run" />
         <div v-else-if="!gaps.data.value" class="skeleton sk sk--block" aria-busy="true"></div>
         <p v-else-if="empty" class="muted">Nenhum concurso nessa janela.</p>
-        <GapsTable v-else :data="gaps.data.value" />
+        <GapsTable v-else :data="gaps.data.value" :order="gapOrder" />
       </section>
 
       <section class="block">
@@ -116,6 +154,20 @@ function setTogether(next: TogetherSel) {
         <CombinationsTable v-else :data="combos.data.value" :pool="pool" />
       </section>
     </div>
+
+    <section class="block">
+      <header class="block-head">
+        <h2>Quentes e frias</h2>
+        <div class="tabs" role="radiogroup" aria-label="Ordem">
+          <label><input v-model="heatOrder" type="radio" value="hot" /> Mais quentes</label>
+          <label><input v-model="heatOrder" type="radio" value="cold" /> Mais frias</label>
+        </div>
+      </header>
+      <LoadError v-if="heat.error.value" :error="heat.error.value" @retry="heat.run" />
+      <div v-else-if="!heat.data.value" class="skeleton sk sk--block" aria-busy="true"></div>
+      <p v-else-if="heat.data.value.window.draws === 0" class="muted">Nenhum concurso ainda.</p>
+      <HeatTable v-else :data="heat.data.value" :order="heatOrder" />
+    </section>
 
     <section class="block">
       <h2>Saíram juntas?</h2>
@@ -148,6 +200,13 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+.gap-summary {
+  flex-basis: 100%;
+  font-size: 0.95rem;
+}
+.gold {
+  color: var(--gold);
 }
 .tabs {
   display: flex;

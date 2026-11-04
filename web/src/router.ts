@@ -12,7 +12,10 @@ export const router = createRouter({
       component: () => import('@/views/ContestView.vue'),
       props: true,
     },
-    { path: '/stats', name: 'stats', component: () => import('@/views/StatsView.vue') },
+    { path: '/estatisticas', name: 'stats', component: () => import('@/views/StatsView.vue') },
+    // Old links. The host reserves /stats (301 to /stats/, then a 403 whose body is still our
+    // index.html), so the app does boot there; this sends it to the real page. Keeps the query.
+    { path: '/stats', redirect: (to) => ({ path: '/estatisticas', query: to.query, hash: to.hash }) },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
   ],
   // A query-only change (stats window, "together" page) keeps the scroll position.

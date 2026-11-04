@@ -1,6 +1,6 @@
 #!/bin/sh
 # Test the database connection from .env, one layer at a time (settings, DNS, TCP, login, schema).
-#   deploy/check-db.sh
+#   scripts/check-db.sh
 # Uses the project's .venv and .env, wherever the project lives. Exit code 0 only if every step passed.
 set -eu
 

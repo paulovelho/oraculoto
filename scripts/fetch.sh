@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Fetch new results from Caixa at home and save them in the prod database (docs/crawler.md §7).
 # The server plans and ingests over SSH; this machine only talks to Caixa. MySQL is never reached from here.
-#   deploy/fetch.sh                        normal run for every game in FETCH_GAMES
-#   deploy/fetch.sh --contest 3080         refetch one contest
-#   deploy/fetch.sh --backfill [--from N] [--to M]
-# Any argument is passed to `oraculoto fetch`. Target and games in deploy/deploy.conf.
+#   scripts/fetch.sh                        normal run for every game in FETCH_GAMES
+#   scripts/fetch.sh --contest 3080         refetch one contest
+#   scripts/fetch.sh --backfill [--from N] [--to M]
+# Any argument is passed to `oraculoto fetch`. Target and games in scripts/deploy.conf.
 # Exit status: 0 if every game ran clean, 1 if any failed (the others still run).
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=deploy.conf
-. "$root/deploy/deploy.conf"
+. "$root/scripts/deploy.conf"
 
 oraculoto="$root/.venv/bin/oraculoto"
 if [ ! -x "$oraculoto" ]; then
