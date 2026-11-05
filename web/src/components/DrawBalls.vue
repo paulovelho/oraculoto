@@ -3,7 +3,8 @@ import { formatBall } from '@/lib/format'
 
 // `matched` given: a bet against its draw. Matched balls stay white, the rest turn red.
 // `tone="gold"`: the drawn numbers next to a bet, so they don't read as hits.
-defineProps<{ balls: number[]; matched?: number[] | null; tone?: 'gold' }>()
+// `greenHits`: matched balls turn green instead of staying white (home page's past bet).
+defineProps<{ balls: number[]; matched?: number[] | null; tone?: 'gold'; greenHits?: boolean }>()
 </script>
 
 <template>
@@ -12,7 +13,11 @@ defineProps<{ balls: number[]; matched?: number[] | null; tone?: 'gold' }>()
       v-for="(n, i) in balls"
       :key="i"
       class="ball"
-      :class="{ 'ball--miss': matched && !matched.includes(n), 'ball--gold': tone === 'gold' }"
+      :class="{
+        'ball--miss': matched && !matched.includes(n),
+        'ball--gold': tone === 'gold',
+        'ball--hit': greenHits && matched && matched.includes(n),
+      }"
     >
       {{ formatBall(n) }}
     </li>
@@ -52,6 +57,13 @@ defineProps<{ balls: number[]; matched?: number[] | null; tone?: 'gold' }>()
   background: color-mix(in srgb, var(--danger) 18%, var(--surface-2));
   color: color-mix(in srgb, var(--danger) 70%, var(--text-muted));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.ball--hit {
+  background:
+    radial-gradient(circle at 32% 28%, rgb(255 255 255 / 0.55) 0%, rgb(255 255 255 / 0) 38%),
+    radial-gradient(circle at 40% 35%, var(--green) 0%, var(--green-deep) 100%);
+  color: #111;
 }
 
 .ball--gold {

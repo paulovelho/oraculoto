@@ -80,7 +80,7 @@ watch(pastContest, () => runDraw())
       </section>
       <p v-else class="notice">A aposta do concurso {{ formatInt(nextContest) }} ainda não saiu.</p>
 
-      <section v-if="past" class="block bet">
+      <section v-if="past" class="block bet bet--center">
         <p class="eyebrow">Aposta passada</p>
         <h2 class="bet__title">
           <RouterLink v-if="past.status === 'drawn'" :to="{ name: 'contest', params: { n: String(past.contest) } }">
@@ -98,7 +98,7 @@ watch(pastContest, () => runDraw())
 
           <div class="row">
             <h3>Aposta do Oraculoto</h3>
-            <DrawBalls :balls="past.numbers" :matched="past.matched" />
+            <DrawBalls :balls="past.numbers" :matched="past.matched" green-hits />
           </div>
 
           <div class="row">
@@ -173,7 +173,7 @@ watch(pastContest, () => runDraw())
 .bet--next {
   border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
 }
-/* The upcoming bet: everything in the panel centered, balls included. */
+/* Both bet panels: everything centered, balls and table included. */
 .bet--center {
   text-align: center;
 }
@@ -181,6 +181,9 @@ watch(pastContest, () => runDraw())
 .bet--center :deep(.balls),
 .bet--center .balls-sk {
   justify-content: center;
+}
+.bet--center > .data-table {
+  margin-inline: auto;
 }
 .block > h2.bet__title {
   display: flex;
