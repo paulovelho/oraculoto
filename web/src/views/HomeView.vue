@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { getDraw, getOraculotoBets } from '@/api'
+import BetResult from '@/components/BetResult.vue'
 import DrawBalls from '@/components/DrawBalls.vue'
 import LoadError from '@/components/LoadError.vue'
 import { jackpotOdds } from '@/lib/bets'
-import { tierName } from '@/lib/draws'
-import { formatDate, formatInt, formatMoney } from '@/lib/format'
+import { formatDate, formatInt } from '@/lib/format'
 import { useHealth } from '@/lib/health'
 import { useLoad } from '@/lib/useLoad'
 
@@ -18,8 +18,26 @@ onMounted(() => {
 })
 
 const next = computed(() => (page.value?.items[0]?.status === 'pending' ? page.value.items[0] : null))
-// The last bet whose contest is past: drawn, or missing from the database.
-const past = computed(() => page.value?.items.find((b) => b.status !== 'pending') ?? null)
+// Where the newest bet whose contest is past (drawn, or missing from the database) sits in the
+// list, newest first; -1 when there's none yet.
+const pastIndex = computed(() => page.value?.items.findIndex((b) => b.status !== 'pending') ?? -1)
+
+// Stepping back through older bets: `older` bets behind the newest past one. With limit 1, page
+// N is the bet at index N - 1, so any one of them is a single request.
+const older = ref(0)
+const {
+  data: olderPage,
+  error: olderError,
+  run: runOlder,
+} = useLoad(() => getOraculotoBets(pastIndex.value + older.value + 1, 1))
+watch(older, (n) => n > 0 && runOlder())
+
+// The bet shown in the past panel; null while an older one loads.
+const past = computed(() => {
+  if (older.value === 0) return page.value?.items[pastIndex.value] ?? null
+  return olderPage.value?.items[0] ?? null
+})
+const hasOlder = computed(() => !!page.value && pastIndex.value + older.value + 1 < page.value.total)
 // The contest it hasn't bet on yet: after the latest draw (from /health), or after its own last bet.
 const nextContest = computed(() => {
   const newest = page.value?.items[0]
@@ -33,8 +51,6 @@ function weekday(iso: string): string {
   return new Date(y!, m! - 1, d!).toLocaleDateString('pt-BR', { weekday: 'long' })
 }
 const odds = computed(() => (next.value ? jackpotOdds(next.value.numbers.length) : null))
-const wins = computed(() => [...(past.value?.prizes ?? [])].sort((a, b) => b.hits - a.hits))
-const topWin = computed(() => wins.value[0] ?? null)
 
 // The numbers drawn in the past bet's contest (cached like every draw).
 const pastContest = computed(() => (past.value?.status === 'drawn' ? past.value.contest : null))
@@ -80,62 +96,47 @@ watch(pastContest, () => runDraw())
       </section>
       <p v-else class="notice">A aposta do concurso {{ formatInt(nextContest) }} ainda não saiu.</p>
 
-      <section v-if="past" class="block bet bet--center">
-        <p class="eyebrow">Aposta passada</p>
-        <h2 class="bet__title">
-          <RouterLink v-if="past.status === 'drawn'" :to="{ name: 'contest', params: { n: String(past.contest) } }">
-            Concurso {{ formatInt(past.contest) }}
-          </RouterLink>
-          <template v-else>Concurso {{ formatInt(past.contest) }}</template>
-          <small v-if="past.date">{{ formatDate(past.date) }}</small>
-        </h2>
+      <section v-if="pastIndex >= 0" class="block bet bet--center">
+        <p class="eyebrow">{{ older === 0 ? 'Aposta passada' : 'Aposta anterior' }}</p>
 
-        <template v-if="past.status === 'drawn'">
-          <p v-if="topWin" class="prize" role="status">
-            O Oraculoto acertou a {{ tierName(topWin.hits).toLowerCase() }}!
-            <strong>{{ formatMoney(past.total) }}</strong>
-          </p>
+        <LoadError v-if="older > 0 && olderError" :error="olderError" @retry="runOlder" />
 
-          <div class="row">
-            <h3>Aposta do Oraculoto</h3>
-            <DrawBalls :balls="past.numbers" :matched="past.matched" green-hits />
-          </div>
+        <template v-else-if="past">
+          <h2 class="bet__title">
+            <RouterLink v-if="past.status === 'drawn'" :to="{ name: 'contest', params: { n: String(past.contest) } }">
+              Concurso {{ formatInt(past.contest) }}
+            </RouterLink>
+            <template v-else>Concurso {{ formatInt(past.contest) }}</template>
+            <small v-if="past.date">{{ formatDate(past.date) }}</small>
+          </h2>
 
-          <div class="row">
-            <h3>Números sorteados</h3>
-            <LoadError v-if="drawError" :error="drawError" @retry="runDraw" />
-            <DrawBalls v-else-if="draw" :balls="draw.balls" tone="gold" />
-            <ol v-else class="balls-sk" aria-hidden="true">
-              <li v-for="i in 6" :key="i" class="skeleton"></li>
-            </ol>
-          </div>
-
-          <p>
-            <strong>{{ past.hits === 1 ? '1 acerto' : `${past.hits ?? 0} acertos` }}</strong>
-            <template v-if="!wins.length"> · sem prêmio</template>
-          </p>
-          <table v-if="wins.length" class="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Faixa</th>
-                <th scope="col" class="num">Combinações</th>
-                <th scope="col" class="num">Prêmio</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="w in wins" :key="w.hits">
-                <th scope="row">{{ tierName(w.hits) }}</th>
-                <td class="num">{{ formatInt(w.combinations) }}</td>
-                <td class="num">{{ formatMoney(w.amount) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <BetResult :bet="past">
+            <template #draw>
+              <div class="row">
+                <h3>Números sorteados</h3>
+                <LoadError v-if="drawError" :error="drawError" @retry="runDraw" />
+                <DrawBalls v-else-if="draw" :balls="draw.balls" tone="gold" />
+                <ol v-else class="balls-sk" aria-hidden="true">
+                  <li v-for="i in 6" :key="i" class="skeleton"></li>
+                </ol>
+              </div>
+            </template>
+          </BetResult>
         </template>
 
+        <!-- Loading an older bet: about the panel's height, so the page doesn't jump. -->
         <template v-else>
-          <DrawBalls :balls="past.numbers" />
-          <p class="muted">O resultado deste concurso não está na base.</p>
+          <h2 class="bet__title"><span class="skeleton sk">Concurso 0000</span></h2>
+          <ol v-for="r in 2" :key="r" class="balls-sk" aria-hidden="true">
+            <li v-for="i in 6" :key="i" class="skeleton"></li>
+          </ol>
+          <p><span class="skeleton sk">0 acertos · sem prêmio</span></p>
         </template>
+
+        <nav class="pager" aria-label="Apostas anteriores">
+          <button type="button" class="btn btn--ghost" :disabled="!hasOlder" @click="older++">‹ Mais antiga</button>
+          <button type="button" class="btn btn--ghost" :disabled="older === 0" @click="older--">Mais recente ›</button>
+        </nav>
       </section>
     </template>
   </div>
@@ -182,7 +183,8 @@ watch(pastContest, () => runDraw())
 .bet--center .balls-sk {
   justify-content: center;
 }
-.bet--center > .data-table {
+/* BetResult has several roots, so its table only matches through :deep. */
+.bet--center > :deep(.data-table) {
   margin-inline: auto;
 }
 .block > h2.bet__title {
@@ -214,12 +216,11 @@ watch(pastContest, () => runDraw())
   color: var(--text-muted);
 }
 
-.prize {
-  padding: 0.75rem 1rem;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--green) 18%, var(--surface));
-  border: 1px solid var(--green);
-  font-weight: 700;
+.pager {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .draw-date {

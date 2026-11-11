@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { getDraw } from '@/api'
+import { getDraw, getOraculotoBet } from '@/api'
+import BetResult from '@/components/BetResult.vue'
 import ContestNav from '@/components/ContestNav.vue'
 import DrawDetails from '@/components/DrawDetails.vue'
 import LoadError from '@/components/LoadError.vue'
@@ -14,12 +15,15 @@ const contest = computed(() => Number(props.n))
 
 const { latestContest: latest } = useHealth()
 const { data: draw, error, run } = useLoad(() => getDraw(contest.value))
+// Oraculoto's bet on this contest. Most contests predate its first bet: a 404 just hides the block.
+const { data: bet, error: betError, run: runBet } = useLoad(() => getOraculotoBet(contest.value))
 
 watch(
   contest,
   (n) => {
     document.title = `Concurso ${formatInt(n)} · Oraculoto`
     run()
+    runBet()
   },
   { immediate: true },
 )
@@ -37,6 +41,12 @@ watch(
     </section>
     <LoadError v-else-if="error" :error="error" @retry="run" />
     <DrawDetails v-else :draw="draw" :eyebrow="latest === contest ? 'Último resultado' : undefined" />
+
+    <LoadError v-if="betError && betError.code !== 'not_found'" :error="betError" @retry="runBet" />
+    <section v-else-if="bet" class="block">
+      <h2>Aposta do Oraculoto</h2>
+      <BetResult :bet="bet" untitled />
+    </section>
 
     <ContestNav :contest="contest" :latest="latest" />
   </div>

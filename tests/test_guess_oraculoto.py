@@ -1,6 +1,5 @@
 """`guess_oraculoto` and the heat function (docs/api.md §11). Only the real-file bet needs the database."""
 
-import random
 from datetime import date, timedelta
 
 import pytest
@@ -10,10 +9,16 @@ from oraculoto.db.results import load_history
 from oraculoto.guess.base import PastDraw
 from oraculoto.guess.heat import heat, heat_from_history, ranked
 from oraculoto.guess.oraculoto import (
+    CONFIG,
     ORACULOTO,
+    ConfigError,
     absent_triple,
     current_gaps,
+    explain_oraculoto,
+    load_config,
     lone_at_or_after,
+    parse_config,
+    parse_config_text,
     runner_up_triples,
 )
 
@@ -48,38 +53,32 @@ def test_gaps_match_the_stats_panel():
 
 
 def test_runner_up_triples_are_exactly_max_minus_one():
-    triples = runner_up_triples(MS, HISTORY)
+    triples = runner_up_triples(HISTORY)
     assert (1, 2, 3) not in triples  # MAX itself is left out
     assert (1, 2, 10) in triples and (12, 22, 58) in triples
     assert len(triples) == 4 * 20 - 2  # 20 triples per draw, (1, 2, 3) counted once instead of twice
 
 
 def test_no_runner_up_when_max_is_one():
-    assert runner_up_triples(MS, draws((1, 2, 3, 4, 5, 6))) == []
+    assert runner_up_triples(draws((1, 2, 3, 4, 5, 6))) == []
 
 
 def test_the_triple_with_the_largest_summed_absence_wins():
     gaps = {1: 40, 2: 5, 3: 9, 4: 7}
     triples = [(1, 2, 3), (1, 3, 4), (2, 3, 4)]
-    assert absent_triple([1], triples, gaps, random.Random(0)) == (1, 3, 4)  # 56 against 54
+    assert absent_triple([1], triples, gaps) == (1, 3, 4)  # 56 against 54
 
 
 def test_only_the_most_absent_ball_with_a_triple_counts():
     gaps = {1: 50, 2: 40, 3: 0, 4: 0, 5: 0}
     # 1 has no triple; 2 has, and the search stops there even though (1, ...) would sum more
-    assert absent_triple([1, 2], [(2, 3, 4), (3, 4, 5)], gaps, random.Random(0)) == (2, 3, 4)
-    assert absent_triple([1], [(2, 3, 4)], gaps, random.Random(0)) is None
+    assert absent_triple([1, 2], [(2, 3, 4), (3, 4, 5)], gaps) == (2, 3, 4)
+    assert absent_triple([1], [(2, 3, 4)], gaps) is None
 
 
-def test_a_tie_on_the_sum_is_drawn_and_repeatable():
-    gaps = {1: 40, 2: 5, 3: 5}
-    tied = [(1, 2, 9), (1, 3, 9)]
-    gaps[9] = 0
-    picks = {absent_triple([1], tied, gaps, random.Random(seed)) for seed in range(20)}
-    assert picks == set(tied)
-    assert absent_triple([1], tied, gaps, random.Random(7)) == absent_triple(
-        [1], tied, gaps, random.Random(7)
-    )
+def test_a_tie_on_the_sum_goes_to_the_lowest_triple():
+    gaps = {1: 40, 2: 5, 3: 5, 9: 0}
+    assert absent_triple([1], [(1, 3, 9), (1, 2, 9)], gaps) == (1, 2, 9)
 
 
 def test_lone_position_by_count_value():
@@ -105,7 +104,14 @@ def test_k_above_the_minimum():
 
 def test_same_history_same_bet():
     assert guess() == guess()
-    assert ORACULOTO.ref == "guess_oraculoto@2"
+    assert ORACULOTO.ref == "guess_oraculoto@3"
+
+
+def test_the_explanation_is_the_bet():
+    ex = explain_oraculoto(MS, HISTORY, 6)
+    assert tuple(sorted(ex.numbers)) == guess()
+    assert [b for s in ex.steps for b in s.added] == ex.numbers  # every ball is owned by one step
+    assert [s.number for s in ex.steps] == ["0", "1", "2", "3", "4"]  # 4 configured steps + heat
 
 
 @pytest.fixture(scope="module")
@@ -126,7 +132,89 @@ def test_the_bet_on_3073(real_history):
     assert ORACULOTO.guess(game, history, 6, {}) == (8, 11, 23, 27, 34, 58)
 
 
-# ---------------------------------------------------------------- heat
+# ---------------------------------------------------------------- the config
+
+
+def config(*steps: dict, version: int = 9) -> dict:
+    return {"version": version, "step": list(steps)}
+
+
+MISSING = {"type": "missing", "window": 52}
+TRIPLE = {"type": "absent_triple", "absent_over": 30, "offset": 1, "fallback": True}
+FREQUENT = {"type": "lone_position", "measure": "count", "window": 52, "start": 2}
+
+
+def test_the_shipped_config_is_the_version_on_record():
+    assert load_config() == CONFIG
+    assert ORACULOTO.ref == f"guess_oraculoto@{CONFIG.version}"
+    assert [s.type for s in CONFIG.steps] == ["missing", "absent_triple", "lone_position", "lone_position"]
+
+
+# 1, 2, 3 came out 4 times (1st); 4 alone at 3 times (2nd); 13-60 never: missing from the window.
+ORDERED = draws((1, 2, 3, 4, 5, 6), (1, 2, 3, 4, 5, 7), (1, 2, 3, 4, 8, 9), (1, 2, 3, 10, 11, 12))
+
+
+def test_steps_run_in_the_configured_order():
+    missing_first = explain_oraculoto(MS, ORDERED, 6, parse_config(config(MISSING, FREQUENT)))
+    assert missing_first.numbers == [13, 14, 15, 16, 17, 18]  # full before the frequent step runs
+    assert missing_first.steps[1].notes[-1].startswith("bet already full")
+
+    frequent_first = explain_oraculoto(MS, ORDERED, 6, parse_config(config(FREQUENT, MISSING)))
+    assert frequent_first.numbers == [4, 13, 14, 15, 16, 17]
+    assert [s.number for s in frequent_first.steps] == ["0", "1", "2"]  # heat last, always
+
+
+def test_a_step_type_can_repeat_with_other_options():
+    third = {**FREQUENT, "start": 3}  # 5 alone at 2 times
+    ex = explain_oraculoto(MS, ORDERED, 6, parse_config(config(FREQUENT, third)))
+    assert ex.numbers[:2] == [4, 5]
+
+
+def test_options_change_the_bet():
+    wide = explain_oraculoto(MS, ORDERED, 60, parse_config(config(MISSING)))
+    assert len(wide.steps[0].added) == 60 - 12  # 13-60
+    # window 1: only the last draw counts, so 4-9 are missing too, after 13-60 (less absent)
+    narrow = explain_oraculoto(MS, ORDERED, 60, parse_config(config({**MISSING, "window": 1})))
+    assert len(narrow.steps[0].added) == 60 - 6 and narrow.steps[0].added[-6:] == [6, 5, 7, 4, 8, 9]
+
+
+def test_no_steps_is_pure_heat():
+    ex = explain_oraculoto(MS, HISTORY, 6, parse_config(config()))
+    assert [s.title for s in ex.steps] == ["hottest balls not yet in, until the bet is full"]
+    assert len(ex.numbers) == 6
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"step": []}, "version"),
+        (config(version=0), "version"),
+        ({**config(), "extra": 1}, "unknown key"),
+        (config({"type": "nope"}), "unknown type 'nope'"),
+        (config({"type": "missing"}), "missing window"),
+        (config({**MISSING, "size": 3}), "unknown option size"),
+        (config({**MISSING, "window": 0}), "at least 1"),
+        (config({**MISSING, "window": True}), "must be int"),
+        (config({**TRIPLE, "fallback": 1}), "must be bool"),
+        (config({**FREQUENT, "measure": "heat"}), "one of count, absence"),
+    ],
+)
+def test_a_wrong_config_is_refused(data, message):
+    with pytest.raises(ConfigError, match=message):
+        parse_config(data)
+
+
+def test_a_config_from_text_names_its_source():
+    assert parse_config_text("version = 7\n", "stdin") == parse_config(config(version=7))
+    with pytest.raises(ConfigError, match="^stdin: version"):
+        parse_config_text("version = 0\n", "stdin")
+
+
+def test_a_broken_file_is_refused(tmp_path):
+    path = tmp_path / "oraculoto.toml"
+    path.write_text("version = 3\n[[step]\n")
+    with pytest.raises(ConfigError, match="oraculoto.toml"):
+        load_config(path)
 
 
 def test_heat_is_recent_minus_the_balls_own_rate():

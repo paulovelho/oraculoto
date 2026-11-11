@@ -177,6 +177,97 @@ def cmd_bet(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    from sqlalchemy import func, select
+
+    from oraculoto.db import bets as bets_db
+    from oraculoto.db import make_engine
+    from oraculoto.db.draws import get_game
+    from oraculoto.db.results import load_history
+    from oraculoto.db.schema import draws
+    from oraculoto.guess.oraculoto import CONFIG, ORACULOTO, ConfigError, explain_oraculoto, parse_config_text
+
+    # before the database, so a broken config fails fast. Not the deployed one: a what-if, never bet
+    config, config_name = CONFIG, None
+    if args.config:
+        config_name = "stdin" if args.config == "-" else Path(args.config).name
+        try:
+            text = sys.stdin.read() if args.config == "-" else Path(args.config).read_text(encoding="utf-8")
+            config = parse_config_text(text, config_name)
+        except (OSError, ConfigError) as e:
+            print(f"audit failed: {e}", file=sys.stderr)
+            return 1
+    ref = f"{ORACULOTO.key}@{config.version}"
+
+    engine = make_engine()
+    try:
+        with engine.connect() as conn:
+            game = get_game(conn, args.game)
+            latest = conn.execute(
+                select(func.max(draws.c.contest_number)).where(draws.c.game_id == game.id)
+            ).scalar_one()
+            if latest is None:
+                print(f"audit failed: no {game.name} contests stored", file=sys.stderr)
+                return 1
+            target = latest + 1 if args.contest is None else args.contest
+            if not 1 <= target <= latest + 1:
+                print(
+                    f"audit failed: contest must be 1-{latest + 1} (the next one), got {target}",
+                    file=sys.stderr,
+                )
+                return 1
+            history = load_history(conn, game, target)  # includes the target itself once it was drawn
+            stored = bets_db.get_bet(conn, game, target)
+    except LookupError as e:
+        print(f"audit failed: {e}", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+
+    drawn = history.pop() if history and history[-1].contest == target else None
+    k = args.k or (len(stored.numbers) if stored else game.bet_min_numbers)
+    if not game.bet_min_numbers <= k <= game.bet_max_numbers:
+        print(
+            f"audit failed: k must be {game.bet_min_numbers}-{game.bet_max_numbers}, got {k}", file=sys.stderr
+        )
+        return 1
+    ex = explain_oraculoto(game, history, k, config)
+
+    fmt = lambda balls: " ".join(f"{b:02d}" for b in balls)  # noqa: E731
+    span = f"#{history[0].contest}-#{history[-1].contest}" if history else "empty"
+    print(f"{ref} for {game.name} #{target}, k = {k}, history {span} ({ex.history} contests)")
+    if config_name is not None:
+        print(f"config: {config_name} (not the deployed one; nothing is bet with it)")
+    for step in ex.steps:
+        print(f"\n[{step.number}] {step.title}")
+        for note in step.notes:
+            print(f"    {note}")
+        if step.added:
+            print(f"    + {fmt(step.added)}")
+    numbers = sorted(ex.numbers)
+    print(f"\nbet: {fmt(numbers)}  (picked in this order: {fmt(ex.numbers)})")
+
+    if stored is not None:
+        same = tuple(numbers) == stored.numbers
+        line = f"stored bet: {fmt(stored.numbers)} ({stored.source})"
+        if same:
+            line += ": same"
+        elif config_name is not None:
+            line += ": differs with this config"
+        elif stored.source != ORACULOTO.ref:
+            line += f": differs, it was placed by an older version than {ORACULOTO.ref}"
+        else:
+            line += ": DIFFERS from the same version (history changed since it was placed?)"
+        print(line)
+    if drawn is not None:
+        hits = sorted(set(numbers) & set(drawn.balls))
+        print(
+            f"drawn: {fmt(drawn.balls)}: {len(hits)} hit{'s' if len(hits) != 1 else ''}"
+            + (f" ({fmt(hits)})" if hits else "")
+        )
+    return 0
+
+
 def cmd_users(args: argparse.Namespace) -> int:
     from oraculoto.db import make_engine
     from oraculoto.db import users as db
@@ -266,6 +357,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--game", default="megasena", help="game slug (default: megasena)")
     p.add_argument("--k", type=int, help="how many numbers (default: the minimum bet, 6 for Mega-Sena)")
     p.set_defaults(func=cmd_bet)
+
+    p = sub.add_parser("audit", help="server: explain where each number of oraculoto's bet comes from")
+    p.add_argument("--game", default="megasena", help="game slug (default: megasena)")
+    p.add_argument("--contest", type=int, metavar="N", help="the contest to explain (default: the next one)")
+    p.add_argument("--k", type=int, help="how many numbers (default: the stored bet's, else the minimum bet)")
+    p.add_argument(
+        "--config", metavar="FILE", help="explain with this oraculoto.toml instead (- for stdin); never bets"
+    )
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("users", help="the invite list: invite, block, unblock, list")
     users_sub = p.add_subparsers(dest="action", required=True)

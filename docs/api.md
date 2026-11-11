@@ -295,16 +295,7 @@ There are no admin HTTP endpoints in v1, which means less to attack.
 
 Oraculoto bets on every contest, as if it played itself: **one bet per contest**, made by its own function, `guess_oraculoto`. This is the one guess that is stored. It's a bet placed before the draw, not a function output to rebuild later, so its record can't be rewritten by changing the code afterwards.
 
-- **Function:** `guess_oraculoto` (`src/oraculoto/guess/oraculoto.py`) keeps the §5 contract. It's not in the registry: not in `/functions`, not backtestable through the API, not a ticket `source`. Still being designed (decided so far on 2026-11-03), as `guess_oraculoto@2` (`@1` was the random placeholder; its bets keep that source). Filled in this order, every step stopping once the bet holds k balls (in the history, steps 0–4 never brought more than 6):
-  0. Every ball that **didn't come out in any of the last 52 contests** goes in, most absent first.
-  1. Over the whole history: the **absent balls**: "Ausente há" (as in `/stats/gaps`) above 30, most absent first.
-  2. The triples that came out **exactly MAX − 1** times, MAX being the most frequent triple's count.
-  3. Through the absent balls, most absent first, the first one in any of those triples brings **its triple** and the search stops. Several triples: the largest summed absence of its three balls; still tied: drawn at random, the generator seeded with the game and the target contest (so the same contest always gives the same numbers).
-  4. If no absent ball is in one, **every absent ball** goes in (most absent first, up to k).
-  5. Last 52 contests: the ball with the **second-largest count**. Positions go by count value (balls tied on the largest count are all 1st; the next count is 2nd). If several balls hold the 2nd, the 3rd is tried, and so on until a position holds one ball alone; if none does, skipped.
-  6. Last 52 contests: the ball **absent the longest** (within the window), from position 1 down, by the same rule.
-     Steps 5 and 6 are skipped when their ball is already in the bet.
-  7. **Last resort:** completed up to k with the hottest balls (`heat`, §4) not yet in.
+- **Function:** `guess_oraculoto` (`src/oraculoto/guess/oraculoto.py`) keeps the §5 contract. It's not in the registry: not in `/functions`, not backtestable through the API, not a ticket `source`. Still being designed, as `guess_oraculoto@3` (`@1` was the random placeholder, `@2` broke triple ties at random; their bets keep that source). The steps, their order, their options and the version live in `src/oraculoto/guess/oraculoto.toml`; after them the bet is always topped up to k with the hottest balls (`heat`, §4). Step types and the shipped config: `docs/oraculoto-guess.md`.
   - For #3073 (history up to #3072): nothing missed the last 52; triple (8, 23, 34); 11 (alone at 10 times, behind 16 and 43 at 11); 34 is the longest absent but already in; heat adds 58 and 27 → **08 11 23 27 34 58**.
 - **Placing it:** `oraculoto bet [--game megasena] [--k N]`, run on the server (by a bot or after `ingest`). The target is the contest after the latest one stored, and the function gets the history up to it.
   - `k` defaults to the game's minimum bet (6); more numbers only with `--k`.

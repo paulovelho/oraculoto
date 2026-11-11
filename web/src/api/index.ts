@@ -44,3 +44,5 @@ export const getTogether = (window: Query, balls: number[], jackpot: boolean, pa
 // session cache is keyed on, so a cached "no bet yet" would outlive the bet.
 export const getOraculotoBets = (page = 1, limit = 20) =>
   request<Page<OraculotoBet>>(`/games/${GAME}/oraculoto`, { page, limit })
+/** Its bet on one contest; 404 (`not_found`) when it has none. Never cached, for the same reason. */
+export const getOraculotoBet = (contest: number) => request<OraculotoBet>(`/games/${GAME}/oraculoto/${contest}`)

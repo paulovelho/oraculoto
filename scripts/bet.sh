@@ -6,6 +6,7 @@
 #   scripts/bet.sh --k 8      any argument is passed to `oraculoto bet`
 # Safe to repeat: a contest that already has a bet is left alone (already_placed). It only bets while the
 # next contest still takes bets (until 19:00 Brasília on its draw date); later, nothing is written.
+# To see the bet first without placing it: scripts/bet-preview.sh.
 # Target and games in scripts/deploy.conf.
 # Exit status: 0 if every game has its bet, 1 if any failed (the others still run).
 set -uo pipefail

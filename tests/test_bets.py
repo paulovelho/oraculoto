@@ -51,7 +51,7 @@ def test_bets_on_the_next_contest(crawled, megasena):
     assert out.result == "placed"
     assert out.bet.contest == 3073
     assert len(out.bet.numbers) == 6 and list(out.bet.numbers) == sorted(out.bet.numbers)
-    assert out.bet.source == "guess_oraculoto@2"
+    assert out.bet.source == "guess_oraculoto@3"
     assert f"{out.closes_at:%Y-%m-%d %H:%M}" == "2026-10-22 19:00"
 
 
@@ -140,7 +140,7 @@ def test_pending_then_scored(crawled, megasena):
     assert page["total"] == 1
     (item,) = page["items"]
     assert item["contest"] == 3073 and item["status"] == "pending" and item["hits"] is None
-    assert item["numbers"] == list(placed.numbers) and item["source"] == "guess_oraculoto@2"
+    assert item["numbers"] == list(placed.numbers) and item["source"] == "guess_oraculoto@3"
     assert item["date"] == "2026-10-22"  # announced with #3072
 
     drawn = list(placed.numbers[:4]) + [n for n in range(1, 61) if n not in placed.numbers][:2]
