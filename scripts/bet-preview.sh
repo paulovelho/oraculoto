@@ -4,7 +4,9 @@
 # server over SSH and writes nothing. It uses the code deployed there.
 #   scripts/bet-preview.sh                   the bet on the next contest, with the deployed oraculoto.toml
 #   scripts/bet-preview.sh --config my.toml  the same with a local config instead: sent over SSH's stdin,
-#                                            never written on the server, never bet with
+#                                            never written on the server, never bet with. A bare
+#                                            name is read from src/oraculoto/guess/; use ./my.toml
+#                                            (or any path with a slash) for a file elsewhere
 #   scripts/bet-preview.sh --contest 3073    replay a past contest: the history before it, compared with the
 #                                            stored bet and the draw
 #   scripts/bet-preview.sh --k 8             any argument is passed to `oraculoto audit`
@@ -31,6 +33,10 @@ while [ $# -gt 0 ]; do
         *) args+=("$1"); shift ;;
     esac
 done
+# a bare name (no slash) is looked up in the guess folder; anything with a slash is used as given
+if [ -n "$config" ] && [[ "$config" != */* ]]; then
+    config="$root/src/oraculoto/guess/$config"
+fi
 if [ -n "$config" ] && [ ! -r "$config" ]; then
     echo "can't read $config" >&2
     exit 1
