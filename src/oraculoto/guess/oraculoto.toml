@@ -33,6 +33,18 @@ fallback = true
 [[step]]
 type = "lone_position"
 measure = "count"
+window = 104
+start = 2
+
+[[step]]
+type = "lone_position"
+measure = "absence"
+window = 104
+start = 1
+
+[[step]]
+type = "lone_position"
+measure = "count"
 window = 52
 start = 2
 

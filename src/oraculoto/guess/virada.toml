@@ -1,0 +1,55 @@
+# guess_oraculoto: the steps that pick oraculoto's own bet (docs/oraculoto-guess.md).
+#
+# The steps run in the order written here. Every step stops once the bet holds k balls, and a
+# ball already in the bet is never added twice. After the last step the bet is always topped up
+# to k with the hottest balls (heat), which is why heat isn't listed.
+#
+# A step type can be used more than once, with different options. Every option is required.
+#
+# ANY CHANGE IN HERE (a value, the order, a step added or removed) CHANGES THE BETS: bump
+# `version`. Stored bets keep the version they were placed with (guess_oraculoto@N).
+
+version = 3
+
+# Every ball that didn't come out in any of the last `window` contests, most absent first.
+[[step]]
+type = "missing"
+window = 42
+
+# The absent balls ("Ausente há" over the whole history, above `absent_over`) and the triples that
+# came out exactly MAX - `offset` times (0 = MAX itself). Most absent ball first, the first one in
+# any of those triples brings its triple (largest summed absence; a tie goes to the lowest triple).
+# If none is in one and `fallback` is true, every absent ball goes in instead.
+[[step]]
+type = "absent_triple"
+absent_over = 30
+offset = 1
+fallback = true
+
+# Over the last `window` contests, the ball alone at position `start` by `measure` ("count": how
+# many times it came out, "absence": contests since it last came out, within the window), else at
+# the first position after it held by one ball. Tied balls share a position. Skipped if no
+# position does, or if that ball is already in the bet.
+[[step]]
+type = "lone_position"
+measure = "count"
+window = 104
+start = 2
+
+[[step]]
+type = "lone_position"
+measure = "absence"
+window = 104
+start = 1
+
+[[step]]
+type = "lone_position"
+measure = "count"
+window = 42
+start = 2
+
+[[step]]
+type = "lone_position"
+measure = "absence"
+window = 42
+start = 1
